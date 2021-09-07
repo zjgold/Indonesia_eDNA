@@ -1,0 +1,459 @@
+---
+title: "Onny Visual Raja Ampat Comparisons"
+author: "Zack Gold"
+date: "04/15/2021"
+output: html_document
+---
+
+Load Packages
+```{r}
+library(here)
+library(tidyverse)
+library(phyloseq)
+library(metagMisc)
+```
+
+# Load Data
+### Visual Survey Data
+```{r}
+#Visual Survery Data
+visual <- read.table(file= here("data","20201228_raja_ampat_data_visual_census_FIX_zjg.txt"), header=T, sep="\t")
+
+visual %>% 
+  pivot_longer( cols=`Anitas_Garden`:`WEST_MANSUAR`, names_to ="Site", values_to ="Presence") %>% 
+  dplyr::select(Visual_Species =ScientificName_accepted, Visual_Family = Family, Visual_Genus=Genus, Site, Presence) -> visual_data
+
+visual_data$Visual_Species %>% unique() %>%  length()
+```
+
+### eDNA Data
+```{r}
+#eDNA Data
+physeq_asv_site_viz <- readRDS(, file=here( "data", "physeq_asv_site_viz.RDS"))
+
+subset_samples(physeq_asv_site_viz, Region=="Raja Ampat") -> phy_raj
+
+phy_raj = filter_taxa(phy_raj, function(x) sum(x) > 0, TRUE)
+
+
+phyloseq_to_df(phy_raj) %>% 
+  pivot_longer( cols=`Anitas_Garden`:`WEST_MANSUAR`, names_to ="Site", values_to ="nReads") -> eDNA_data
+
+
+```
+
+### CRUX Data
+
+```{r}
+
+#Visual Survery Data
+crux <- read.table(file= here("data","global_database_taxonomy_20201204.csv"), header=T, sep=",")
+
+
+
+```
+
+# Comparison of Visual and eDNA Data
+
+### ASVs per Site
+
+```{r}
+eDNA_data %>% 
+  filter(., nReads >0) %>% 
+  group_by(Site) %>% 
+  dplyr::summarise(ASV_Count = n_distinct(OTU), Species_count = n_distinct(Species)) -> ASV_counts
+
+```
+### Species Per Site
+```{r}
+eDNA_data %>% 
+  filter(., nReads >0) %>% 
+   filter(., !Species %in% c("","NA sp.")) %>% 
+  group_by(Site) %>% 
+  dplyr::summarise(Species_Count = n_distinct(Species)) -> Species_counts
+
+```
+### Species Per Site Visual
+```{r}
+
+visual_data %>% 
+  filter(., Presence >0) %>% 
+  group_by(Site) %>% 
+  dplyr::summarise(Species_Count_Viz = n_distinct(Visual_Species)) -> Visual_Species_counts
+
+```
+```{r}
+ASV_counts %>% 
+  left_join(Visual_Species_counts) %>% 
+  mutate(., perc = ASV_Count/Species_Count_Viz) %>% 
+  filter(., Site != "KABUI_STRAIT") %>% 
+  dplyr::summarise(mean(perc))
+```
+
+
+### Region
+##### Species
+```{r}
+
+eDNA_visual_region_overlap<- intersect(eDNA_data$Species, visual_data$Visual_Species)
+
+eDNA_region_unique<- setdiff(eDNA_data$Species, visual_data$Visual_Species)
+eDNA_region_unique[!eDNA_region_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_region_unique
+
+viz_region_unique<- setdiff(visual_data$Visual_Species,eDNA_data$Species)
+
+length(eDNA_region_unique)/(length(eDNA_visual_region_overlap) + length(eDNA_region_unique))
+
+eDNA_data %>% 
+  filter(Species %in% eDNA_region_unique) %>% 
+  dplyr::summarise(n_distinct(Family),n_distinct(Genus))
+
+eDNA_region_unique %>% 
+  sort()
+```
+##### How many Species Only Observed via Visual Surveys have 12S MiFish Barcodes?
+```{r}
+
+viz_species_with_barcode <- intersect(viz_region_unique, crux$Species)
+viz_species_without_barcode <- setdiff(viz_region_unique, crux$Species)
+
+```
+
+##### Genus
+```{r}
+
+eDNA_visual_region_genus_overlap<- intersect(eDNA_data$Genus, visual_data$Visual_Genus)
+
+eDNA_region_unique_genus<- setdiff(eDNA_data$Genus, visual_data$Visual_Genus)
+eDNA_region_unique_genus[!eDNA_region_unique_genus %in% c("","NA sp.","Engraulis mordax")] ->eDNA_region_unique_genus
+
+viz_region_unique_genus<- setdiff(visual_data$Visual_Genus,eDNA_data$Genus)
+
+
+```
+
+##### Family
+```{r}
+
+eDNA_visual_region_family_overlap<- intersect(eDNA_data$Family, visual_data$Visual_Family)
+
+eDNA_region_unique_family<- setdiff(eDNA_data$Family, visual_data$Visual_Family)
+eDNA_region_unique_family[!eDNA_region_unique_family %in% c("","NA sp.","Engraulis mordax")] ->eDNA_region_unique_family
+
+viz_region_unique_family<- setdiff(visual_data$Visual_Family,eDNA_data$Family)
+
+
+```
+
+##### Species
+```{r}
+
+eDNA_visual_region_overlap<- intersect(eDNA_data$Species, visual_data$Visual_Species)
+
+eDNA_region_unique<- setdiff(eDNA_data$Species, visual_data$Visual_Species)
+eDNA_region_unique[!eDNA_region_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_region_unique
+
+viz_region_unique<- setdiff(visual_data$Visual_Species,eDNA_data$Species)
+
+length(eDNA_region_unique)/(length(eDNA_visual_region_overlap)+length(viz_region_unique))
+
+
+```
+### Site Specific
+```{r}
+eDNA_data %>% 
+  filter(., Site=="Anitas_Garden") %>% 
+  filter(., nReads >0) -> eDNA_data_AG
+
+eDNA_data %>% 
+  filter(., Site=="CAPE_KRI") %>% 
+  filter(., nReads >0) -> eDNA_data_CK
+
+
+eDNA_data %>% 
+  filter(., Site=="KABUI_STRAIT") %>% 
+  filter(., nReads >0) -> eDNA_data_KS
+
+
+eDNA_data %>% 
+  filter(., Site=="KRI_LAGOON") %>% 
+  filter(., nReads >0) -> eDNA_data_KL
+
+eDNA_data %>% 
+  filter(., Site=="MELISSAS_GARDEN") %>% 
+  filter(., nReads >0) -> eDNA_data_MG
+
+eDNA_data %>% 
+  filter(., Site=="SARDINE_REEF") %>% 
+  filter(., nReads >0) -> eDNA_data_SR
+
+eDNA_data %>% 
+  filter(., Site=="SECRET_LAGOON") %>% 
+  filter(., nReads >0) -> eDNA_data_SL
+
+eDNA_data %>% 
+  filter(., Site=="WEST_MANSUAR") %>% 
+  filter(., nReads >0) -> eDNA_data_WM
+
+
+```
+
+```{r}
+visual_data %>% 
+  filter(., Site=="Anitas_Garden") %>% 
+  filter(., Presence >0) -> viz_data_AG
+
+visual_data %>% 
+  filter(., Site=="CAPE_KRI") %>% 
+  filter(., Presence >0) -> viz_data_CK
+
+
+visual_data %>% 
+  filter(., Site=="KABUI_STRAIT") %>% 
+  filter(., Presence >0) -> viz_data_KS
+
+
+visual_data %>% 
+  filter(., Site=="KRI_LAGOON") %>% 
+  filter(., Presence >0) -> viz_data_KL
+
+visual_data %>% 
+  filter(., Site=="MELISSAS_GARDEN") %>% 
+  filter(., Presence >0) -> viz_data_MG
+
+visual_data %>% 
+  filter(., Site=="SARDINE_REEF") %>% 
+  filter(., Presence >0) -> viz_data_SR
+
+visual_data %>% 
+  filter(., Site=="SECRET_LAGOON") %>% 
+  filter(., Presence >0) -> viz_data_SL
+
+visual_data %>% 
+  filter(., Site=="WEST_MANSUAR") %>% 
+  filter(., Presence >0) -> viz_data_WM
+```
+
+##### Anitas Garden
+```{r}
+# Total ASVs
+eDNA_data_AG$OTU %>%  unique() %>%  length()
+#Total Species
+eDNA_data_AG$Species %>%  unique() %>%  length()
+
+eDNA_visual_AG_overlap<- intersect(eDNA_data_AG$Species, viz_data_AG$Visual_Species)
+
+eDNA_AG_unique<- setdiff(eDNA_data_AG$Species, viz_data_AG$Visual_Species)
+eDNA_AG_unique[!eDNA_AG_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_AG_unique
+
+viz_AG_unique<- setdiff(viz_data_AG$Visual_Species,eDNA_data_AG$Species)
+
+length(eDNA_visual_AG_overlap)/(length(eDNA_visual_AG_overlap)+length(eDNA_AG_unique)+length(viz_AG_unique))
+length(eDNA_AG_unique)/(length(eDNA_visual_AG_overlap)+length(eDNA_AG_unique))
+
+(length(eDNA_AG_unique) + length(viz_AG_unique) + length(eDNA_visual_AG_overlap))/ (length(viz_AG_unique)+length(eDNA_visual_AG_overlap)) -> average_increase_AG
+```
+
+##### CAPE_KRI
+```{r}
+
+eDNA_visual_CK_overlap<- intersect(eDNA_data_CK$Species, viz_data_CK$Visual_Species)
+
+eDNA_CK_unique<- setdiff(eDNA_data_CK$Species, viz_data_CK$Visual_Species)
+eDNA_CK_unique[!eDNA_CK_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_CK_unique
+
+viz_CK_unique<- setdiff(viz_data_CK$Visual_Species,eDNA_data_CK$Species)
+
+length(eDNA_visual_CK_overlap)/(length(eDNA_visual_CK_overlap)+length(eDNA_CK_unique)+length(viz_CK_unique))
+length(eDNA_CK_unique)/(length(eDNA_visual_CK_overlap)+length(eDNA_CK_unique))
+
+(length(eDNA_CK_unique) + length(viz_CK_unique) + length(eDNA_visual_CK_overlap))/ (length(viz_CK_unique)+length(eDNA_visual_CK_overlap)) -> average_increase_CK
+
+```
+
+##### KABUI_STRAIT
+```{r}
+
+# Total ASVs
+eDNA_data_KS$OTU %>%  unique() %>%  length()
+#Total Species
+eDNA_data_KS$Species %>%  unique() %>%  length()
+viz_data_KS$Visual_Species %>%  unique() %>%   length()
+eDNA_visual_KS_overlap<- intersect(eDNA_data_KS$Species, viz_data_KS$Visual_Species)
+
+eDNA_KS_unique<- setdiff(eDNA_data_KS$Species, viz_data_KS$Visual_Species)
+eDNA_KS_unique[!eDNA_KS_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_KS_unique
+
+viz_KS_unique<- setdiff(viz_data_KS$Visual_Species,eDNA_data_KS$Species)
+
+length(viz_KS_unique) + length(eDNA_visual_KS_overlap)
+length(eDNA_KS_unique)
+  
+length(eDNA_visual_KS_overlap)/(length(eDNA_visual_KS_overlap)+length(eDNA_KS_unique)+length(viz_KS_unique))
+
+length(eDNA_KS_unique)/(length(eDNA_visual_KS_overlap)+length(eDNA_KS_unique))
+
+(length(eDNA_KS_unique) + length(viz_KS_unique) + length(eDNA_visual_KS_overlap))/ (length(viz_KS_unique)+length(eDNA_visual_KS_overlap)) -> average_increase_KS
+
+```
+
+##### KRI_LAGOON
+```{r}
+
+# Total ASVs
+eDNA_data_KL$OTU %>%  unique() %>%  length()
+#Total Species
+eDNA_data_KL$Species %>%  unique() %>%  length()
+
+
+eDNA_visual_KL_overlap<- intersect(eDNA_data_KL$Species, viz_data_KL$Visual_Species)
+
+eDNA_KL_unique<- setdiff(eDNA_data_KL$Species, viz_data_KL$Visual_Species)
+eDNA_KL_unique[!eDNA_KL_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_KL_unique
+
+viz_KL_unique<- setdiff(viz_data_KL$Visual_Species,eDNA_data_KL$Species)
+
+length(eDNA_visual_KL_overlap) +length(viz_KL_unique)
+
+
+length(eDNA_visual_KL_overlap)/(length(eDNA_visual_KL_overlap)+length(eDNA_KL_unique)+length(viz_KL_unique))
+
+length(eDNA_KL_unique)/(length(eDNA_visual_KL_overlap)+length(eDNA_KL_unique))
+
+(length(eDNA_KL_unique) + length(viz_KL_unique) + length(eDNA_visual_KL_overlap))/ (length(viz_KL_unique)+length(eDNA_visual_KL_overlap)) -> average_increase_KL
+
+
+```
+
+##### MELISSAS_GARDEN
+```{r}
+
+eDNA_visual_MG_overlap<- intersect(eDNA_data_MG$Species, viz_data_MG$Visual_Species)
+
+eDNA_MG_unique<- setdiff(eDNA_data_MG$Species, viz_data_MG$Visual_Species)
+eDNA_MG_unique[!eDNA_MG_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_MG_unique
+
+viz_MG_unique<- setdiff(viz_data_MG$Visual_Species,eDNA_data_MG$Species)
+
+length(eDNA_visual_MG_overlap)/(length(eDNA_visual_MG_overlap)+length(eDNA_MG_unique)+length(viz_MG_unique))
+
+length(eDNA_MG_unique)/(length(eDNA_visual_MG_overlap)+length(eDNA_MG_unique))
+
+(length(eDNA_MG_unique) + length(viz_MG_unique) + length(eDNA_visual_MG_overlap))/ (length(viz_MG_unique)+length(eDNA_visual_MG_overlap)) -> average_increase_MG
+
+```
+##### SARDINE_REEF
+```{r}
+
+eDNA_visual_SR_overlap<- intersect(eDNA_data_SR$Species, viz_data_SR$Visual_Species)
+
+eDNA_SR_unique<- setdiff(eDNA_data_SR$Species, viz_data_SR$Visual_Species)
+eDNA_SR_unique[!eDNA_SR_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_SR_unique
+
+viz_SR_unique<- setdiff(viz_data_SR$Visual_Species,eDNA_data_SR$Species)
+
+length(eDNA_visual_SR_overlap)/(length(eDNA_visual_SR_overlap)+length(eDNA_SR_unique)+length(viz_SR_unique))
+
+length(eDNA_SR_unique)/(length(eDNA_visual_SR_overlap)+length(eDNA_SR_unique))
+
+(length(eDNA_SR_unique) + length(viz_SR_unique) + length(eDNA_visual_SR_overlap))/ (length(viz_SR_unique)+length(eDNA_visual_SR_overlap)) -> average_increase_SR
+
+
+```
+##### SECRET_LAGOON
+```{r}
+
+eDNA_visual_SL_overlap<- intersect(eDNA_data_SL$Species, viz_data_SL$Visual_Species)
+
+eDNA_SL_unique<- setdiff(eDNA_data_SL$Species, viz_data_SL$Visual_Species)
+eDNA_SL_unique[!eDNA_SL_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_SL_unique
+
+viz_SL_unique<- setdiff(viz_data_SL$Visual_Species,eDNA_data_SL$Species)
+
+length(eDNA_visual_SL_overlap)/(length(eDNA_visual_SL_overlap)+length(eDNA_SL_unique)+length(viz_SL_unique))
+
+length(eDNA_SL_unique)/(length(eDNA_visual_SL_overlap)+length(eDNA_SL_unique))
+
+(length(eDNA_SL_unique) + length(viz_SL_unique) + length(eDNA_visual_SL_overlap))/ (length(viz_SL_unique)+length(eDNA_visual_SL_overlap)) -> average_increase_SL
+
+```
+
+##### WEST_MANSUAR
+```{r}
+
+eDNA_visual_WM_overlap<- intersect(eDNA_data_WM$Species, viz_data_WM$Visual_Species)
+
+eDNA_WM_unique<- setdiff(eDNA_data_WM$Species, viz_data_WM$Visual_Species)
+eDNA_WM_unique[!eDNA_WM_unique %in% c("","NA sp.","Engraulis mordax")] ->eDNA_WM_unique
+
+viz_WM_unique<- setdiff(viz_data_WM$Visual_Species,eDNA_data_WM$Species)
+
+length(eDNA_visual_WM_overlap)/(length(eDNA_visual_WM_overlap)+length(eDNA_WM_unique)+length(viz_WM_unique))
+
+(length(eDNA_WM_unique) + length(viz_WM_unique) + length(eDNA_visual_WM_overlap))/ (length(viz_WM_unique)+length(eDNA_visual_WM_overlap)) -> average_increase_WM
+
+```
+### mean
+```{r}
+mean(c(length(eDNA_WM_unique)/(length(eDNA_visual_WM_overlap)+length(eDNA_WM_unique)),
+     length(eDNA_SL_unique)/(length(eDNA_visual_SL_overlap)+length(eDNA_SL_unique)),
+     length(eDNA_SR_unique)/(length(eDNA_visual_SR_overlap)+length(eDNA_SR_unique)),
+     length(eDNA_MG_unique)/(length(eDNA_visual_MG_overlap)+length(eDNA_MG_unique)),
+     length(eDNA_KL_unique)/(length(eDNA_visual_KL_overlap)+length(eDNA_KL_unique)),
+     length(eDNA_KS_unique)/(length(eDNA_visual_KS_overlap)+length(eDNA_KS_unique)),
+     length(eDNA_AG_unique)/(length(eDNA_visual_AG_overlap)+length(eDNA_AG_unique)),
+     length(eDNA_CK_unique)/(length(eDNA_visual_CK_overlap)+length(eDNA_CK_unique)))
+
+     )
+
+
+mean(c((length(eDNA_AG_unique) + length(viz_AG_unique) + length(eDNA_visual_AG_overlap))/ (length(viz_AG_unique)+length(eDNA_visual_AG_overlap)),
+     (length(eDNA_KS_unique) + length(viz_KS_unique) + length(eDNA_visual_KS_overlap))/ (length(viz_KS_unique)+length(eDNA_visual_KS_overlap)),
+     (length(eDNA_KL_unique) + length(viz_KL_unique) + length(eDNA_visual_KL_overlap))/ (length(viz_KL_unique)+length(eDNA_visual_KL_overlap)),
+     (length(eDNA_CK_unique) + length(viz_CK_unique) + length(eDNA_visual_CK_overlap))/ (length(viz_CK_unique)+length(eDNA_visual_CK_overlap)),
+     (length(eDNA_MG_unique) + length(viz_MG_unique) + length(eDNA_visual_MG_overlap))/ (length(viz_MG_unique)+length(eDNA_visual_MG_overlap)),
+     (length(eDNA_SR_unique) + length(viz_SR_unique) + length(eDNA_visual_SR_overlap))/ (length(viz_SR_unique)+length(eDNA_visual_SR_overlap)),
+     (length(eDNA_SL_unique) + length(viz_SL_unique) + length(eDNA_visual_SL_overlap))/ (length(viz_SL_unique)+length(eDNA_visual_SL_overlap)),
+     (length(eDNA_WM_unique) + length(viz_WM_unique) + length(eDNA_visual_WM_overlap))/ (length(viz_WM_unique)+length(eDNA_visual_WM_overlap))))
+
+```
+
+```{r}
+
+eDNA_data %>% 
+  filter(., Species !="") %>% 
+  dplyr::select(Species, Site, nReads) %>% 
+  group_by(Species, Site) %>% 
+  summarise(., nReads = sum(nReads)) %>% 
+   full_join(visual_data, by=c("Species"="Visual_Species", "Site")) %>% 
+   mutate(., Detection=case_when(nReads > 0 & Presence > 0 ~"Both Detected",
+                       nReads > 0 & is.na(Presence) | Presence == 0 ~ "eDNA Detection Only",
+                       Presence == 0 | is.na(Presence) & nReads == 0 | is.na(nReads) ~ "Both Not Detected",
+                       Presence > 0 & nReads == 0 | is.na(nReads) ~"Visual Detection Only",
+                       TRUE ~"BROKEN")) %>% 
+  dplyr::select(Species, Site, Detection) %>%  distinct() -> combined_df
+
+combined_df %>%  View()
+combined_df %>% 
+  group_by(Species) %>% 
+  count(Detection) %>% 
+  filter(., Detection %in% "Both Detected") -> both_detected
+
+combined_df %>% 
+  pivot_wider(., names_from = Site, values_from = Detection) %>% 
+  mutate(., Both_Detected_Across_Raja_Ampat = if_else( Species %in% both_detected$Species, "Concurrently Detected", "Not Concurrently Detected")) -> cleaned_combined
+
+
+cleaned_combined %>% write_csv(file = here("data","eDNA_vs_allen_supplemental_table.csv"))
+
+
+eDNA_data %>% dplyr::select(Domain  ,  Phylum ,  Class   ,   Order    ,    Family    , Genus ,    Species) %>%  distinct() -> taxonomy 
+
+eDNA_data %>% 
+  filter(., Species !="") %>% 
+  dplyr::select(Species, Site, nReads) %>% 
+  group_by(Species) %>% 
+  summarise(., nReads = sum(nReads)) %>% 
+  filter(., !Species %in% visual_data$Visual_Species) %>% 
+  dplyr::select(Species) %>%  left_join( taxonomy) %>% write_csv(file = here("data","eDNA_only_supplemental_table_taxonomy.csv"))
+```

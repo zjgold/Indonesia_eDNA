@@ -1,0 +1,3995 @@
+---
+title: "Moorea Data Analysis"
+author: "Zack Gold"
+date: "01/12/2021"
+output: html_document
+---
+
+#Load Packages
+```{r}
+library(tidyverse)
+library(phyloseq)
+library(metagMisc)
+
+library(iNEXT)
+library(dplyr)
+library(tibble)
+library(reshape2)
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+library(plotly)
+library(optparse)
+library(ggrepel)
+library(vegan)
+library(wesanderson) # I just want to give a shout out to karthik for being a true legend and fellow Wes Anderson afficiando, as well as to Gaurav for sharing with me this amazing package. Truly life altering
+library(cluster)
+library(biomformat)
+library('phyloseq')
+library('gridBase')
+library("optparse")
+library(ranacapa)
+library(devtools)
+library(decontam)
+library(ggfortify)
+library(RColorBrewer)
+library(multcompView)
+library(grid)
+library(gridExtra)
+library(ape)
+library(scales)
+library(dendextend)
+library(colorspace)
+library(dynamicTreeCut)
+library(grid)
+library(readr)
+library(treemapify)
+library(knitr)
+##Source https://github.com/mahendra-mariadassou/phyloseq-extended
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/graphical_methods.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/tree_methods.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/plot_merged_trees.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/specificity_methods.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/ternary_plot.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/richness.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/edgePCA.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/copy_number_correction.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/import_frogs.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/prevalence.R")
+source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/compute_niche.R")
+source('/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/pairwise_adonis.R')
+source('/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/ggrare.R')
+library(here)
+```
+
+#Load Data
+```{r}
+
+ASV.table_long <- readRDS(file=here("decontamination","ASV.table_long"))
+
+ASV.table_long_mpa <- readRDS(file="/Users/zackgold/Documents/UCLA_phd/Projects/California/General_Channel_Islands/MPA_test_data/ms/plos_one/Scorpion-SMR-eDNA-Metabarcoding/analysis/scorpion/decontam/ASV.table_long_mpa.RDS")
+
+ASV.nested <- readRDS(file=here( "decontamination", "ASV.nested_final.RDS"))
+hash.key.updated_12S <- readRDS(here( "decontamination","hash.key.updated_12S"))
+
+zjg_eidx <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occupancy_results_sum.taxonomy_tech_reps_summed_eDNA_index.RDS")
+
+zjg_reads <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occupancy_results_sum.taxonomy_tech_reps_summed_read_counts.RDS")
+
+zjg_asvs_reads_sites <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occ_site_ASV_reads_summed.RDS")
+
+zjg_asv_reads <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occ_site_asv_table.RDS")
+
+zjg_asv_index <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occ_site_asv_table_edna_index.RDS")
+
+zjg_asv_site_viz <- readRDS(file="/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occ_site_ASV_reads_summed_4_viz.RDS")
+
+raw_asv_data <-readRDS(file=here("data","ASV.table_long_raw.RDS"))
+
+metadata <- read.table(file="/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/onny_metadata_11022020.txt", header=T)
+
+ASV.nested.mpa <- readRDS(file="/Users/zackgold/Documents/UCLA_phd/Projects/California/General_Channel_Islands/MPA_test_data/ms/plos_one/Scorpion-SMR-eDNA-Metabarcoding/analysis/scorpion/decontam/ASV.nested_final.RDS")
+
+good_ASVs <- readRDS(file="/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/good_ASVs.RDS")
+```
+
+##### Clean Up Metadata
+```{r}
+metadata %>%  dplyr::select(-Seq_number) %>% distinct() -> metadata2
+
+
+metadata %>% 
+  dplyr::select(-Seq_number) %>% 
+  dplyr::rename(Seq_number =New_name) %>%  
+  unite(., "Sample",c("Site","Bio_rep"), sep = "_", remove=F) %>% 
+  unite(., "Location",c("INDO_REGION","Site"), sep = "_", remove=F) %>% 
+  dplyr::rename(Region=INDO_REGION) %>% distinct() %>% 
+  mutate(., Region = recode(Region,  `RAJA_AMPAT` = "Raja Ampat",
+                            `LEMBEH_STRAIT` = "Lembeh Strait",
+                            `BATAM_BINTAN`  = "Batam Bintam",
+                            `DERAWAN`   = "Derawan",
+                            `ACEH`   = "Aceh",
+                             `TERNATE` = "Ternate",
+                            `WAKATOBI` =   "Wakatobi" ))->metadata
+
+metadata$Seq_number %>%  unique()
+
+metadata %>% 
+  dplyr::select(-Seq_number,-Sample,-Bio_rep) %>% distinct() %>%  na.omit()-> site_metadata
+
+
+metadata %>% 
+  filter(., Sample == "NA_NA") %>% 
+  dplyr::select(Seq_number) -> samples_to_remove
+  metadata %>%  View()
+```
+
+##### Clean Up Raw Data
+```{r}
+raw_asv_data %>% 
+  filter(., Miseq_run =="bio_12S_miu") %>% 
+  filter(., str_detect(seq_number,"merged")) %>% 
+  filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  dplyr::select(-Miseq_run) %>% 
+  filter(., sample %in% colnames(zjg_eidx)) %>% 
+  filter(., !sample %in% c("PPG_3","SP_1_star","BM_1_star")) %>% 
+  filter(., sum.taxonomy !="") %>% 
+  pivot_wider(values_from = reads, names_from=sample) -> merged_miu_asv_data
+
+merged_miu_asv_data %>%  colnames() -> onny_samples_to_use
+onny_samples_to_use[3:length(onny_samples_to_use)]-> onny_samples_to_use
+
+```
+
+
+
+# General Run Statistics
+
+##### How Many ASVs and Reads passed decontamination
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  filter(., sample %in% onny_samples_to_use) %>% 
+    group_by(Miseq_run1) %>% 
+  dplyr::summarise(ASVs = n_distinct(seq_number), Tot_reads = sum(nReads))
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+      left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+      group_by(sample) %>% 
+  dplyr::summarise(ASVs = n_distinct(seq_number), Tot_reads = sum(nReads)) %>% dplyr::summarise(mean(Tot_reads), min(Tot_reads), max(Tot_reads))
+
+```
+
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by=c("sample"="Seq_number")) %>% 
+  left_join(hash.key.updated_12S) %>% 
+      filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  separate(., sum.taxonomy, into=c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") %>% 
+    group_by(Region) %>% 
+  dplyr::summarise(ASVs = n_distinct(seq_number), Tot_reads = sum(nReads), Samples= n_distinct(sample)) -> r2_table
+
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by=c("sample"="Seq_number")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(hash.key.updated_12S) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+      filter(., sum.taxonomy !="") %>% 
+  separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") %>% 
+  group_by(Site, Region) %>% 
+  dplyr::summarise(ASVs = n_distinct(seq_number), Tot_reads = sum(nReads), Samples= n_distinct(sample))
+
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by=c("sample"="Seq_number")) %>% 
+  left_join(hash.key.updated_12S) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+      filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") %>%
+    mutate(., Species_lvl = if_else(is.na(Species) | Species=="", 0,1)) %>%
+  filter(., !is.na(Species)) %>% 
+  filter(., Species !="") %>% 
+    group_by(Region) %>% 
+  dplyr::summarise(ASVs_species = n_distinct(seq_number)) ->r2_species
+
+r2_table %>% 
+  left_join(r2_species) %>% 
+  mutate(perc=ASVs_species/ASVs)
+```
+
+
+
+```{r}
+
+raw_asv_data %>%
+  filter(., str_detect(seq_number, "12S_miu")) %>%
+    filter(., sample %in% onny_samples_to_use) %>% 
+dplyr::summarise(sum(reads))
+
+raw_asv_data %>% 
+  filter(., reads >0) %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by=c("sample"="Seq_number")) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(hash.key.updated_12S) %>% 
+  separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") %>%
+    group_by(Region) %>% 
+  dplyr::summarise(ASVs = n_distinct(seq_number), Tot_reads = sum(reads), Samples= n_distinct(sample)) -> r1_table
+
+raw_asv_data %>% 
+  filter(., reads >0) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by=c("sample"="Seq_number")) %>% 
+  left_join(hash.key.updated_12S) %>% 
+  separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") %>%
+      filter(., !is.na(Species)) %>% 
+  filter(., Species !="") %>% 
+  group_by(Region) %>% 
+  dplyr::summarise(ASVs_species = n_distinct(seq_number))->r1_species
+
+
+r1_table %>% 
+  left_join(r1_species) %>% 
+  mutate(perc=ASVs_species/ASVs)
+
+```
+
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by=c("sample"="Seq_number")) %>% 
+  left_join(hash.key.updated_12S) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+      filter(., sum.taxonomy !="") %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") %>% 
+  dplyr::summarise(ASVs = n_distinct(seq_number), Tot_reads = sum(nReads), Samples= n_distinct(sample)) -> r3_table
+
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by=c("sample"="Seq_number")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(hash.key.updated_12S) %>% 
+      filter(., sum.taxonomy !="") %>% 
+  separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") %>%
+    mutate(., Species_lvl = if_else(is.na(Species) | Species=="", 0,1)) %>%
+  filter(., !is.na(Species)) %>% 
+  filter(., Species !="") %>% 
+  dplyr::summarise(ASVs_species = n_distinct(seq_number)) ->r3_species
+
+cbind(r3_table,r3_species) %>% 
+  mutate(perc=ASVs_species/ASVs)
+```
+
+##### How Many ASVs were assigned to Taxonomic Level
+
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble) %>% 
+  unnest() %>% 
+  filter(., str_detect(seq_number, "12S_miu")) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(hash.key.updated_12S) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+      filter(., sum.taxonomy !="") %>% 
+  separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") -> step6_tibble
+
+
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+  dplyr::summarise(n_distinct(seq_number))
+  
+#Species
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+  filter(!is.na(Species)) %>% 
+  filter(., !Species %in% c("","NA sp.","NA")) %>%
+  dplyr::summarise(n_distinct(seq_number))
+
+# Genus
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+    filter(!is.na(Species)) %>% 
+   filter(., Species %in% c("","NA sp.","NA")) %>% 
+  filter(., !Genus %in% c("","NA sp.","NA")) %>% 
+  dplyr::summarise(n_distinct(seq_number))
+
+# Family
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+    filter(!is.na(Species)) %>% 
+   filter(., Species %in% c("","NA sp.","NA")) %>% 
+  filter(., Genus %in% c("","NA sp.","NA")) %>% 
+    filter(., !Family %in% c("","NA sp.","NA")) %>% 
+  dplyr::summarise(n_distinct(seq_number))
+
+# Order
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+    filter(!is.na(Species)) %>% 
+   filter(., Species %in% c("","NA sp.","NA")) %>% 
+  filter(., Genus %in% c("","NA sp.","NA")) %>% 
+    filter(., Family %in% c("","NA sp.","NA")) %>% 
+    filter(., !Order %in% c("","NA sp.","NA")) %>% 
+  dplyr::summarise(n_distinct(seq_number))
+
+# Class
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+    filter(!is.na(Species)) %>% 
+   filter(., Species %in% c("","NA sp.","NA")) %>% 
+  filter(., Genus %in% c("","NA sp.","NA")) %>% 
+    filter(., Family %in% c("","NA sp.","NA")) %>% 
+  filter(., Order %in% c("","NA sp.","NA")) %>% 
+    filter(., !Class %in% c("","NA sp.","NA")) %>% 
+  dplyr::summarise(n_distinct(seq_number))
+
+# Phylum
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+    filter(!is.na(Species)) %>% 
+   filter(., Species %in% c("","NA sp.","NA")) %>% 
+  filter(., Genus %in% c("","NA sp.","NA")) %>% 
+    filter(., Family %in% c("","NA sp.","NA")) %>% 
+  filter(., Order %in% c("","NA sp.","NA")) %>% 
+    filter(., Class %in% c("","NA sp.","NA")) %>% 
+    filter(., !Phylum %in% c("","NA sp.","NA")) %>% 
+  dplyr::summarise(n_distinct(seq_number))
+
+
+# Domain
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+    filter(!is.na(Species)) %>% 
+   filter(., Species %in% c("","NA sp.","NA")) %>% 
+  filter(., Genus %in% c("","NA sp.","NA")) %>% 
+    filter(., Family %in% c("","NA sp.","NA")) %>% 
+  filter(., Order %in% c("","NA sp.","NA")) %>% 
+    filter(., Class %in% c("","NA sp.","NA")) %>% 
+      filter(., Phylum %in% c("","NA sp.","NA")) %>% 
+    filter(., !Domain %in% c("","NA sp.","NA")) %>% 
+  dplyr::summarise(n_distinct(seq_number))
+
+# Unassigned
+step6_tibble %>% 
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+    filter(is.na(Species)) %>% 
+    filter(., Domain %in% c("","NA sp.","NA")) %>% 
+  dplyr::summarise(n_distinct(seq_number))
+
+
+```
+
+
+###### How many ASVs could not be assigned
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble) %>% 
+  unnest() %>% 
+  filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(hash.key.updated_12S) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+      filter(., sum.taxonomy=="") %>% 
+  dplyr::summarise(n_distinct(seq_number))
+
+```
+
+
+# Generate Fasta of ASVs
+```{r}
+
+miu_detailed <- read.table(file =here("miu_bio_12S_taxonomy_tables","miu_12S_ASV_taxonomy_detailed.txt"), header = TRUE, sep="\t") 
+
+miu_detailed %>% 
+  dplyr::select(seq_number=X12S_seq_number, sequence) %>% 
+  mutate(., seq_number = str_replace_all(seq_number, "12S_","12S_miu_")) -> miu_detailed
+
+step6_tibble %>%
+  dplyr::select(-sample_name,-sample,-nReads,-Miseq_run, -distances_id) %>% 
+   distinct() %>% 
+   left_join(miu_detailed) -> onny_ASVs
+
+write.csv(onny_ASVs, file=here("data","onny_asv_sequences.csv"))
+ 
+ onny_ASVs %>% 
+   dplyr::select(seq_number,sequence) -> for_fasta
+
+ library(Biostrings)
+ DNAStringSet(for_fasta$sequence) -> seqers
+ names(seqers) <- for_fasta$seq_number
+ 
+writeXStringSet(seqers, filepath = here("data","onny_asv.fasta"))
+```
+
+# Generate MPA Fasta of ASVs
+```{r}
+ASV.nested.mpa$Step5.tibble[[1]] %>%
+  filter(., Site =="Taylor") %>% 
+  dplyr::select(sample) %>%  unique() -> taylor_samples
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S")) %>% 
+  filter(., !sample %in% taylor_samples$sample) %>% 
+      filter(., sum.taxonomy !="") %>% 
+  separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") -> step6_tibble_mpa
+
+mpa_detailed <- read.table(file ="/Users/zackgold/Documents/UCLA_phd/Projects/California/General_Channel_Islands/MPA_test_data/input/2020320_analysis/fishcard_12S_all_taxonomy_tables/fishcard_12S_all_ASV_taxonomy_detailed.txt", header = TRUE, sep="\t") 
+
+mpa_detailed %>%  dplyr::select(seq_number=all_seq_number, sequence)  -> mpa_detailed
+
+step6_tibble_mpa %>% 
+   distinct() %>% 
+   left_join(mpa_detailed) %>% 
+  pivot_wider(names_from = sample, values_from = nReads, values_fill = 0)-> mpa_ASVs
+mpa_ASVs %>%  View()
+write.csv(mpa_ASVs, file=here("data","mpa_asv_sequences.csv"))
+ 
+ mpa_ASVs %>% 
+   dplyr::select(seq_number,sequence) -> for_fasta_mpa
+ 
+for_fasta_mpa %>%  View()
+ library(Biostrings)
+ DNAStringSet(for_fasta_mpa$sequence) -> seqers
+ names(seqers) <- for_fasta_mpa$seq_number
+ 
+writeXStringSet(seqers, filepath = here("data","mpa_asv.fasta"))
+```
+
+##### Sample Read Depth Stats
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S")) %>% 
+  left_join(hash.key.updated_12S) %>% 
+      filter(., sum.taxonomy !="") %>% 
+      filter(., seq_number %in% good_ASVs$seq_number) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  group_by(Miseq_run1, sample) %>% 
+  dplyr::summarise(Tot_reads = sum(nReads)) %>% 
+  dplyr::summarise(max(Tot_reads),min(Tot_reads),mean(Tot_reads), n_distinct(sample))
+
+```
+
+##### MPA Sample Read Depth Stats
+```{r}
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S")) %>% 
+  filter(., !sample %in% taylor_samples$sample) %>% 
+      filter(., sum.taxonomy !="") %>% 
+  group_by(Miseq_run, sample) %>% 
+  dplyr::summarise(Tot_reads = sum(nReads)) %>% 
+  dplyr::summarise(max(Tot_reads),min(Tot_reads),mean(Tot_reads), n_distinct(sample))
+
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S")) %>% 
+  filter(., !sample %in% taylor_samples$sample) %>% 
+  filter(., sum.taxonomy !="") %>%
+    mutate(., site = str_sub(sample, 1,-5)) %>% 
+  group_by(site) %>% 
+  dplyr::summarise(Tot_ASVs = n_distinct(seq_number))
+```
+
+
+## Exploration of Taxonomic Assignments
+```{r}
+zjg_asv_reads %>% dplyr::select(seq_number, sum.taxonomy) %>% 
+  filter(., sum.taxonomy !="")-> taxonomy_asvs
+
+```
+
+```{r}
+
+```
+
+
+
+#Ranacapa Code
+```{r anacapa to phyloseq functions from ranacapa library imported manually since they do not work on R3.6.0,  results="hide", warning=FALSE, include=FALSE}
+#' Takes a site-abundance table from Anacapa, and summarizes to each unique taxon in the sum.taxonomy column
+#' @param taxon_table OTU table from Anacapa
+#' @author Gaurav Kandlikar
+#' @examples
+#' good_taxon_table <- data.frame(sum.taxonomy = c("a;b;c;d;f;u", "p;q;r;s;t;u"),
+#' site_1 = c(0,1), site_2 = c(10, 20))
+#' group_anacapa_by_taxonomy(good_taxon_table)
+#' @export
+
+group_anacapa_by_taxonomy <- function(taxon_table) {
+  # If tables were made in New Anacapa (with Domain), get rid of domain...
+  if(stringr::str_count(taxon_table$sum.taxonomy, ";")[1] == 2) {
+    taxon_table$sum.taxonomy = gsub(pattern = "^.*?;", replacement = "", x = taxon_table$sum.taxonomy)
+  }
+  taxon_table$sum.taxonomy
+  taxon_table %>%
+    dplyr::filter(sum.taxonomy != "") %>%
+    dplyr::group_by(sum.taxonomy) %>%
+    dplyr::summarize_if(is.numeric, sum) %>%
+    dplyr::mutate(sum.taxonomy = as.character(sum.taxonomy)) %>%
+    data.frame
+}
+
+
+#' Takes an site-abundance table from Anacapa, along with a qiime-style mapping file, and returns a phyloseq object
+#' @param taxon_table Taxon table in the anacapa format
+#' @param metadata_file Metadata file with rows as sites, columns as variables
+#' @return phyloseq class object
+#' @author Gaurav Kandlikar
+#' @examples
+#' good_taxon_table <- data.frame(sum.taxonomy = c("a;b;c;d;f;u", "p;q;r;s;t;u"),
+#' site_1 = c(0,1), site_2 = c(10, 20))
+#' good_maps <- data.frame(site = c("site_1", "site_2"), season = c("wet", "dry"),
+#'  host = c("oak", "sage"))
+#' convert_anacapa_to_phyloseq(good_taxon_table, good_maps)
+#' @export
+
+
+convert_anacapa_to_phyloseq <- function(taxon_table, metadata_file) {
+
+  # Validate the files
+  validate_input_files(taxon_table, metadata_file)
+
+  # Group the anacapa ouptut by taxonomy, if it has not yet happened, and turn it into a matrix
+  taxon_table2 <- group_anacapa_by_taxonomy(taxon_table) %>%
+    tibble::column_to_rownames("sum.taxonomy") %>%
+    as.matrix
+  # Reorder the columns (sites) for ease of displaying later
+  taxon_table2 <- taxon_table2[ , order(colnames(taxon_table2))]
+
+  # Convert the matrix into a phyloseq otu_table object, with taxa as the rows
+  ana_taxon_table_physeq <- phyloseq::otu_table(taxon_table2, taxa_are_rows = TRUE)
+
+  # Extract the rownames of the matrix above- this has the full taxonomic path.
+  # Split the taxonomic path on semicolons, and turn the resulting matrix into
+  # a phyloseq tax_table object
+  taxon_names <- reshape2::colsplit(rownames(taxon_table2), ";",
+                          names = c("Domain","Phylum","Class","Order","Family","Genus","Species")) %>%
+    as.matrix
+  rownames(taxon_names) <- rownames(taxon_table2)
+
+  tax_physeq <- phyloseq::tax_table(taxon_names)
+  colnames(tax_physeq) <- c("Domain","Phylum","Class","Order","Family","Genus","Species")
+
+  # Make a phyloseq object out of the otu_table and the tax_table objects
+  physeq_object <- phyloseq::phyloseq(ana_taxon_table_physeq, tax_physeq)
+
+  # Make sure the mapping file (ie the site metadata) is ordered according to site name
+  rownames(metadata_file) <- metadata_file[, 1]
+  metadata_file <- metadata_file[order(metadata_file[, 1]), ]
+
+  # Convert the mapping file into a phyloseq sample_data object, and merge it with the
+  # phyloseq object created above to make a phyloseq object with otu table, tax table, and sample data.
+  sampledata <- phyloseq::sample_data(metadata_file)
+  sample_names(sampledata)
+  sample_names(physeq_object)
+  phyloseq::merge_phyloseq(physeq_object, sampledata)
+}
+
+#' Takes a phyloseq object with an otu_table object and returns a vegan style community matrix.
+#' @param physeq_object phyloseq object with an otu_table object within
+#' @return vegan-style community matrix
+#' @examples
+#' good_taxon_table <- data.frame(sum.taxonomy = c("a;b;c;d;f;u", "p;q;r;s;t;u"),
+#' site_1 = c(0,1), site_2 = c(10, 20))
+#' good_maps <- data.frame(site = c("site_1", "site_2"), season = c("wet", "dry"),
+#' host = c("oak", "sage"))
+#' physeq_object <- convert_anacapa_to_phyloseq(good_taxon_table, good_maps)
+#' vegan_otu(physeq_object)
+#' @export
+vegan_otu <- function(physeq_object) {
+  OTU <- phyloseq::otu_table(physeq_object)
+  if (phyloseq::taxa_are_rows(OTU)) {
+    OTU <- t(OTU)
+  }
+  return(methods::as(OTU, "matrix"))
+}
+
+#' Remove "xxx_seq_number" column from ana_taxon_table file if it exists
+#' takes one taxon table as its input, and if it include
+#' a column named "xxx_seq_number", it gets rid of that column - it's not of use to us
+#' any longer
+#'
+#' @param taxon_table taxonomy table from Anacapa
+#' @return ana_taxon_table file, with "xxx_seq_number" column removed (if it existed)
+#' @examples
+#' good_taxon_table <- data.frame(seq_number = c(1,2),
+#' sum.taxonomy = c("a;b;c;d;f;u", "p;q;r;s;t;u"),
+#' site_1 = c(0,1), site_2 = c(10, 20))
+#' scrub_seqNum_column(good_taxon_table)
+#' @export
+scrub_seqNum_column <- function(taxon_table) {
+  to_return <- taxon_table %>% dplyr::select(-dplyr::matches("seq_number"))
+  return(to_return)
+}
+
+#' Replace empty calls in Anacapa taxonomy tables with Unknown
+#' (that is what they effectively are to most users)
+#' @param taxon_table taxonomy table from Anacapa
+#' @return ana_taxon_table with scrubbed 'sum.taxonomy' column
+#' @examples
+#' good_taxon_table <- data.frame(sum.taxonomy = c("a;b;c;d;f;u", "p;q;r;s;t;u"),
+#' site_1 = c(0,1), site_2 = c(10, 20))
+#' scrub_taxon_paths(good_taxon_table)
+#' @export
+scrub_taxon_paths <- function(taxon_table) {
+  to_return <- taxon_table
+  new_sum_tax <- reshape2::colsplit(taxon_table$sum.taxonomy, ";",
+                          names = c("Domain","Phylum", "Class", "Order", "Family", "Genus", "Species"))
+
+  new_sum_tax <- new_sum_tax %>%
+    dplyr::mutate(Domain = ifelse(is.na(Domain) | Domain == "", "unknown", Domain))
+    dplyr::mutate(Phylum = ifelse(is.na(Phylum) | Phylum == "", "unknown", Phylum)) %>%
+    dplyr::mutate(Class = ifelse(is.na(Class) | Class == "", "unknown", Class)) %>%
+    dplyr::mutate(Order = ifelse(is.na(Order) | Order == "", "unknown", Order)) %>%
+    dplyr::mutate(Family = ifelse(is.na(Family) | Family == "", "unknown", Family)) %>%
+    dplyr::mutate(Genus = ifelse(is.na(Genus) | Genus == "", "unknown", Genus)) %>%
+    dplyr::mutate(Species = ifelse(is.na(Species)| Species == "", "unknown", Species))
+
+  new_sum_tax2 <- paste(new_sum_tax$Domain,
+    new_sum_tax$Phylum,
+                        new_sum_tax$Class,
+                        new_sum_tax$Order,
+                        new_sum_tax$Family,
+                        new_sum_tax$Genus,
+                        new_sum_tax$Species, sep = ";")
+  to_return$sum.taxonomy <- new_sum_tax2
+  return(to_return)
+}
+
+#' Verify that the input taxon_table file and the input mapping file meets specificationss
+#' The function takes one taxon table as its input, and verfies that it meets
+#' the expected standards.
+#' The standards incude:
+#' 1. Column names exist.
+#' 2. One of the columns is named "sum.taxonomy"
+#' 3. The "xxx_seq_number" column, if it ever existed, is removed
+#' 4. All columns apart from sum.taxonomy should be numeric
+#' 5. All columns apart from sum.taxonomy should have corresponding row in metadata file
+#' @param taxon_table taxonomy table from Anacapa
+#' @param metadata_file Qiime-style mapping
+#' @examples
+#' good_taxon_table <- data.frame(sum.taxonomy = c("a;b;c;d;f;u", "p;q;r;s;t;u"),
+#' site_1 = c(0,1), site_2 = c(10, 20))
+#' good_maps <- data.frame(site = c("site_1", "site_2"),
+#' season = c("wet", "dry"), host = c("oak", "sage"))
+#' validate_input_files(good_taxon_table, good_maps)
+#' @export
+validate_input_files <- function(taxon_table, metadata_file) {
+  # 1. Column names exist.
+  if (is.null(colnames(taxon_table))) {
+    stop("The input taxon table should have column names. The taxonomy column should be named 'sum.taxonomy'; the rest of the columns should be named according to their sample names.")
+  }
+
+  # 2. One of the columns is named "sum.taxonomy"
+  if (!("sum.taxonomy" %in% colnames(taxon_table))) {
+    stop("Please make sure that the taxonomy column in the input taxon table is named 'sum.taxonomy'!")
+  }
+
+  # 3. The "xxx_seq_number" column, if it ever existed, is removed
+  if (any(stringr::str_detect(colnames(taxon_table), "seq_number"))) {
+    stop("Please makes sure that you have removed the 'xxx_seq_number' column from the taxon table (note: this can be done with the function `scrub_seqNum_column`)")
+  }
+
+  # 4. All columns apart from sum.taxonomy should be numeric
+  if (!(all(sapply(taxon_table %>% ungroup() %>%  dplyr::select(-sum.taxonomy), is.numeric)))) {
+    stop("Please make sure that all columns apart from sum.taxonomy only contain numeric data!")
+  }
+
+  # 5. All columns apart from sum.taxonomy should have corresponding row in metadata file
+ # if (!(all(colnames(taxon_table %>% dplyr::select(-sum.taxonomy)) %in% metadata_file[, 1]))) {
+  #  stop("Please make sure that each sample in your taxon table has a corresponding row in the mapping file!")
+  #}
+
+
+}
+
+```
+
+#Create Sum by Taxonomy phyloseq objects
+
+```{r}
+
+zjg_eidx %>%
+  dplyr::select(-`PPG_3`,-`SP_1_star`,-`BM_1_star`) %>% 
+  filter(., sum.taxonomy !="") %>% filter(., sum.taxonomy %in% good_ASVs$sum.taxonomy)-> zjg_eidx
+
+zjg_reads %>% 
+    dplyr::select(-`PPG_3`,-`SP_1_star`,-`BM_1_star`) %>% 
+  filter(., sum.taxonomy !="") %>% filter(., sum.taxonomy %in% good_ASVs$sum.taxonomy)-> zjg_reads
+
+
+physeq_obj.step5_eIDX <- convert_anacapa_to_phyloseq(zjg_eidx, metadata)
+
+physeq_obj.step5_counts <- convert_anacapa_to_phyloseq(zjg_reads, metadata)
+```
+
+```{r}
+subset_samples(physeq_obj.step5_eIDX, !is.na(Region)) -> physeq_obj.step5_eIDX
+
+subset_samples(physeq_obj.step5_counts, !is.na(Region)) -> physeq_obj.step5_counts
+
+subset_samples(physeq_obj.step5_eIDX, Sample!="Undetermined_A") -> physeq_obj.step5_eIDX
+
+subset_samples(physeq_obj.step5_counts, Sample!="Undetermined_A") -> physeq_obj.step5_counts
+
+```
+# Create ASV Phyloseq objects
+
+### ASV Reads
+```{r}
+#Metadata
+metadata %>% dplyr::select(-Seq_number) %>%  as.data.frame() -> sampledata_asv
+
+rownames(sampledata_asv) <- metadata$Seq_number
+sample_data(sampledata_asv) -> sampledata_asv
+
+
+#ASV Reads
+zjg_asv_reads %>%
+  dplyr::select(-`SP_1_star`,-`BM_1_star`) %>% 
+  filter(., sum.taxonomy !="") %>% filter(., seq_number %in% good_ASVs$seq_number) -> zjg_asv_reads
+zjg_asv_reads %>%  View()
+zjg_asv_reads %>% 
+  dplyr::select(sum.taxonomy, -seq_number) %>% 
+  separate(., sum.taxonomy, into=c("Domain","Phylum","Class","Order","Family","Genus","Species"), sep=";") %>% 
+  replace(is.na(.), "") %>%  as.matrix()-> zjg_asv_reads_taxonomy
+
+rownames(zjg_asv_reads_taxonomy) <- zjg_asv_reads$seq_number
+
+TAX = tax_table(zjg_asv_reads_taxonomy)
+zjg_asv_reads %>% 
+  dplyr::select(-sum.taxonomy, -seq_number) %>% as.matrix() -> zjg_asv_reads_otu
+rownames(zjg_asv_reads_otu) <- zjg_asv_reads$seq_number
+
+OTU = otu_table(zjg_asv_reads_otu, taxa_are_rows = TRUE)
+physeq_asv_reads = phyloseq(OTU, TAX, sampledata_asv)
+
+write.csv(zjg_asv_reads, file=here("data","Supplemental_table_3_ASV_table.csv"))
+```
+
+### ASV eDNA Index
+```{r}
+# ASV Index
+zjg_asv_index %>% 
+    dplyr::select(-`SP_1_star`,-`BM_1_star`) %>% 
+  filter(., sum.taxonomy !="") -> zjg_asv_index
+
+
+zjg_asv_index %>% 
+  dplyr::select(sum.taxonomy, -seq_number) %>% 
+  separate(., sum.taxonomy, into=c("Domain","Phylum","Class","Order","Family","Genus","Species"), sep=";") %>% 
+  replace(is.na(.), "") %>%  as.matrix()-> zjg_asv_index_taxonomy
+
+rownames(zjg_asv_index_taxonomy) <- zjg_asv_index$seq_number
+
+TAX_index = tax_table(zjg_asv_reads_taxonomy)
+zjg_asv_index %>% 
+  ungroup() %>% 
+  dplyr::select(-sum.taxonomy, -seq_number) %>% as.matrix() -> zjg_asv_index_otu
+rownames(zjg_asv_index_otu) <- zjg_asv_index$seq_number
+
+OTU_index = otu_table(zjg_asv_index_otu, taxa_are_rows = TRUE)
+physeq_asv_eIDX = phyloseq(OTU_index, TAX_index,sampledata_asv)
+
+```
+
+### ASV Site
+```{r}
+# ASV Site Reads
+
+#Metadata
+site_metadata %>%  as.data.frame() -> sampledata_asv_site
+rownames(sampledata_asv_site) <- site_metadata$Site
+sample_data(sampledata_asv_site) -> sampledata_asv_site
+
+zjg_asvs_reads_sites %>% filter(., sum.taxonomy !="") %>% filter(., seq_number %in% good_ASVs$seq_number)-> zjg_asvs_reads_sites
+
+zjg_asvs_reads_sites %>% 
+  ungroup() %>% 
+  dplyr::select(sum.taxonomy, -seq_number) %>% 
+  separate(., sum.taxonomy, into=c("Domain","Phylum","Class","Order","Family","Genus","Species"), sep=";") %>% 
+  replace(is.na(.), "") %>%  as.matrix()-> zjg_reads_asvs_sites_taxonomy
+
+rownames(zjg_reads_asvs_sites_taxonomy) <- zjg_asvs_reads_sites$seq_number
+
+TAX_sites = tax_table(zjg_reads_asvs_sites_taxonomy)
+
+zjg_asvs_reads_sites %>% 
+  ungroup() %>% 
+  dplyr::select(-sum.taxonomy, -seq_number,-number) %>% as.matrix() -> zjg_asv_sites_otu
+rownames(zjg_asv_sites_otu) <- zjg_asvs_reads_sites$seq_number
+
+OTU_sites = otu_table(zjg_asv_sites_otu, taxa_are_rows = TRUE)
+physeq_asv_site = phyloseq(OTU_sites, TAX_sites,sampledata_asv_site)
+
+write.csv(zjg_asvs_reads_sites, file=here("data","Supplemental_table_4_ASV_site_summed_table.csv"))
+
+
+```
+
+### ASV Site (Collapsed to Visual Site Level)
+```{r}
+# ASV Site Reads Visual
+
+#Metadata
+site_metadata %>%  as.data.frame() %>% dplyr::select(Region,Site_Viz) %>%  distinct()-> sampledata_asv_site
+rownames(sampledata_asv_site) <- sampledata_asv_site$Site_Viz
+sample_data(sampledata_asv_site) -> sampledata_asv_site
+
+zjg_asv_site_viz %>% filter(., sum.taxonomy !="") %>% filter(., seq_number %in% good_ASVs$seq_number)-> zjg_asv_site_viz
+
+zjg_asv_site_viz %>% 
+  ungroup() %>% 
+  dplyr::select(sum.taxonomy, -seq_number) %>% 
+  separate(., sum.taxonomy, into=c("Domain","Phylum","Class","Order","Family","Genus","Species"), sep=";") %>% 
+  replace(is.na(.), "") %>%  as.matrix()-> zjg_asv_site_viz_taxonomy
+
+rownames(zjg_asv_site_viz_taxonomy) <- zjg_asv_site_viz$seq_number
+
+TAX_sites = tax_table(zjg_asv_site_viz_taxonomy)
+
+zjg_asv_site_viz %>% 
+  ungroup() %>% 
+  dplyr::select(-sum.taxonomy, -seq_number,-number) %>% as.matrix() -> zjg_asv_site_viz_otu
+rownames(zjg_asv_site_viz_otu) <- zjg_asv_site_viz$seq_number
+
+OTU_sites = otu_table(zjg_asv_site_viz_otu, taxa_are_rows = TRUE)
+physeq_asv_site_viz = phyloseq(OTU_sites, TAX_sites,sampledata_asv_site)
+
+
+
+```
+
+### ASV MPA
+```{r}
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-5)) %>%
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  mutate(., Region="Southern California")  -> asv_mpa_longer
+
+#Metadata
+asv_mpa_longer %>% 
+  dplyr::select(sample, Site, Region) %>%  distinct() %>%  as.data.frame() -> sampledata_asv_mpa
+rownames(sampledata_asv_mpa) <- sampledata_asv_mpa$sample
+sample_data(sampledata_asv_mpa) -> sampledata_asv_mpa
+
+#ASV Reads
+asv_mpa_longer %>% 
+  dplyr::select(sample, nReads, seq_number, sum.taxonomy) %>% 
+  pivot_wider(., names_from=sample, values_from=nReads, values_fill =0) -> mpa_asv_reads
+
+mpa_asv_reads %>% 
+  dplyr::select(sum.taxonomy, -seq_number) %>% 
+  separate(., sum.taxonomy, into=c("Domain","Phylum","Class","Order","Family","Genus","Species"), sep=";") %>% 
+  replace(is.na(.), "") %>%  as.matrix()-> mpa_asv_reads_taxonomy
+
+rownames(mpa_asv_reads_taxonomy) <- mpa_asv_reads$seq_number
+
+TAX = tax_table(mpa_asv_reads_taxonomy)
+mpa_asv_reads %>% 
+  dplyr::select(-sum.taxonomy, -seq_number) %>% as.matrix() -> mpa_asv_reads_otu
+rownames(mpa_asv_reads_otu) <- mpa_asv_reads$seq_number
+
+OTU = otu_table(mpa_asv_reads_otu, taxa_are_rows = TRUE)
+physeq_asv_mpa_reads = phyloseq(OTU, TAX, sampledata_asv_mpa)
+
+```
+
+### ASV MPA Site
+```{r}
+
+#Metadata
+asv_mpa_longer %>% 
+  dplyr::select(Site, Region) %>%  distinct() %>%  as.data.frame() -> sampledata_asv_mpa_site
+
+rownames(sampledata_asv_mpa_site) <- sampledata_asv_mpa_site$Site
+sample_data(sampledata_asv_mpa_site) -> sampledata_asv_mpa_site
+
+#ASV Reads
+asv_mpa_longer %>% 
+  dplyr::select(Site, nReads, seq_number, sum.taxonomy) %>% 
+  group_by(Site, seq_number, sum.taxonomy) %>% 
+  dplyr::summarise(nReads= sum(nReads)) %>% 
+  pivot_wider(., names_from=Site, values_from=nReads, values_fill =0) -> mpa_asv_reads_site
+
+mpa_asv_reads_site %>% 
+  dplyr::select(sum.taxonomy, -seq_number) %>% 
+  separate(., sum.taxonomy, into=c("Domain","Phylum","Class","Order","Family","Genus","Species"), sep=";") %>% 
+  replace(is.na(.), "") %>%  as.matrix()-> mpa_asv_reads_taxonomy_site
+
+rownames(mpa_asv_reads_taxonomy_site) <- mpa_asv_reads_site$seq_number
+
+TAX = tax_table(mpa_asv_reads_taxonomy_site)
+
+mpa_asv_reads_site %>% 
+  dplyr::ungroup() %>% 
+  dplyr::select(-sum.taxonomy, -seq_number) %>%  as.matrix() -> mpa_asv_reads_otu_site
+rownames(mpa_asv_reads_otu_site) <- mpa_asv_reads_site$seq_number
+
+OTU = otu_table(mpa_asv_reads_otu_site, taxa_are_rows = TRUE)
+physeq_asv_mpa_reads_site = phyloseq(OTU, TAX, sampledata_asv_mpa_site)
+
+```
+
+### Miu Raw
+```{r}
+
+# ASV Site Reads Visual
+
+#Metadata
+metadata %>% dplyr::select(-Seq_number) %>%  as.data.frame() -> sampledata_asv
+rownames(sampledata_asv) <- metadata$Seq_number
+sample_data(sampledata_asv) -> sampledata_asv
+
+#ASV Reads
+merged_miu_asv_data %>%
+filter(., sum.taxonomy !="") %>% filter(., seq_number %in% good_ASVs$seq_number)-> merged_miu_asv_data
+
+merged_miu_asv_data %>% 
+  dplyr::select(sum.taxonomy, -seq_number) %>% 
+  separate(., sum.taxonomy, into=c("Domain","Phylum","Class","Order","Family","Genus","Species"), sep=";") %>% 
+  replace(is.na(.), "") %>%  as.matrix()-> merged_miu_asv_data_taxonomy
+
+rownames(merged_miu_asv_data_taxonomy) <- merged_miu_asv_data$seq_number
+
+TAX = tax_table(merged_miu_asv_data_taxonomy)
+merged_miu_asv_data %>% 
+  dplyr::select(-sum.taxonomy, -seq_number) %>% as.matrix() -> merged_miu_asv_data_otu
+rownames(merged_miu_asv_data_otu) <- merged_miu_asv_data$seq_number
+
+OTU = otu_table(merged_miu_asv_data_otu, taxa_are_rows = TRUE)
+physeq_asv_miu_raw = phyloseq(OTU, TAX, sampledata_asv)
+
+physeq_asv_miu_raw = filter_taxa(physeq_asv_miu_raw, function(x) sum(x) > 0, TRUE)
+
+```
+
+
+```{r}
+subset_samples(physeq_asv_reads, !is.na(Region)) -> physeq_asv_reads
+subset_samples(physeq_asv_eIDX, !is.na(Region)) -> physeq_asv_eIDX
+subset_samples(physeq_asv_site, !is.na(Region)) -> physeq_asv_site
+subset_samples(physeq_asv_site_viz, !is.na(Region)) -> physeq_asv_site_viz
+
+
+subset_samples(physeq_asv_reads, Sample!="Undetermined_A") -> physeq_asv_reads
+subset_samples(physeq_asv_eIDX, Sample!="Undetermined_A") -> physeq_asv_eIDX
+
+saveRDS(physeq_asv_site, file=here( "data", "physeq_asv_site.RDS"))
+saveRDS(physeq_asv_site_viz, file=here( "data", "physeq_asv_site_viz.RDS"))
+```
+
+# Color Generator -----------
+
+```{r}
+col3.gr <- wes_palette(name = "Darjeeling1", n=5, type="discrete")
+col3.gr
+col12.gr <- wes_palette(name = "Zissou1", n=5, type="discrete")
+col12.gr
+
+col2.gr <- wes_palette(name = "Darjeeling2", n=5, type="discrete")
+col2.gr
+col1.gr <- wes_palette(name = "GrandBudapest1", n=4, type="discrete")
+col1.gr
+col4.gr <- wes_palette(name = "Royal1", n=4, type="discrete")
+col4.gr
+col5.gr <- wes_palette(name = "GrandBudapest2", n=4, type="discrete")
+col5.gr
+col6.gr <- wes_palette(name = "Chevalier1", n=4, type="discrete")
+col6.gr
+col7.gr <- wes_palette(name = "Moonrise3", n=4, type="discrete")
+col7.gr
+col8.gr <- wes_palette(name = "IsleofDogs1", n=4, type="discrete")
+col8.gr
+col9.gr <- wes_palette(name = "IsleofDogs2", n=4, type="discrete")
+col9.gr
+
+col.great <- c(col1.gr[3],col3.gr[1],col1.gr[2],col3.gr[4],col6.gr[2],col6.gr[1],col2.gr[4],col2.gr[2],col5.gr[2],col4.gr[1],col4.gr[3],col7.gr[2],col7.gr[3],col4.gr[3])
+col.mor3 <- c(col12.gr[1],col12.gr[3],col12.gr[5])
+col.mor8 <- c(col1.gr[3],col3.gr[1],col1.gr[2],col3.gr[4],col6.gr[2],col6.gr[1],col2.gr[4],col2.gr[2])
+col.mor4 <- c(col3.gr[1],col3.gr[4],col3.gr[2],col3.gr[5])
+
+col.mor8_diff <- c(col1.gr[3],col3.gr[1],col1.gr[2],col2.gr[4],col3.gr[4],col6.gr[1],col6.gr[2],col2.gr[2])
+
+```
+
+# Alpha Diversity 
+
+## Exploring Species ID
+
+
+```{r}
+rownames(get_taxa(physeq_obj.step5_counts)) %>%  kable()
+```
+
+
+```{r}
+get_taxa_unique(physeq_obj.step5_counts,"Species") %>% length() -2
+
+get_taxa_unique(physeq_obj.step5_counts,"Genus") %>% length() -2
+
+get_taxa_unique(physeq_obj.step5_counts,"Family") %>% length() -1
+
+```
+
+```{r}
+
+subset_taxa(physeq_obj.step5_counts,  Class=="Actinopteri") -> fishes_phy
+get_taxa_unique(fishes_phy,"Species") %>% length() -2
+
+get_taxa_unique(fishes_phy,"Genus") %>% length() -2
+
+get_taxa_unique(fishes_phy,"Family") %>% length() -1
+
+
+```
+```{r}
+
+subset_taxa(physeq_obj.step5_counts,  Class=="Chondrichthyes") -> sharks_phy
+get_taxa_unique(sharks_phy,"Species") %>% length() -1
+
+get_taxa_unique(sharks_phy,"Genus") %>% length() -1
+
+get_taxa_unique(sharks_phy,"Family") %>% length() -1
+```
+
+## Habitat Richness
+
+### All ASVs
+
+##### Total ASVs
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+  filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  group_by(Region) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number), Total_samples = n_distinct(sample), Total_sites =n_distinct(Site))-> tot_asvs_region
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+      filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-5)) %>%
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  mutate(., Region="Southern California") %>% 
+    group_by(Region) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number), Total_samples = n_distinct(sample), Total_sites =n_distinct(Site))  -> tot_asvs_CA
+
+
+tot_asvs_region <- rbind(tot_asvs_region, tot_asvs_CA)
+
+
+newSTorder = c("Aceh", "Batam Bintam" ,"Derawan","Wakatobi","Lembeh Strait","Ternate","Raja Ampat","Southern California")
+
+
+Figure_Total_ASVs <- tot_asvs_region %>% ggplot(., aes(x=Region, y=Total_ASVs)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8_diff) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Total ASVs") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=16,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=16)) 
+
+Figure_Total_ASVs$data$Region <- as.character(Figure_Total_ASVs$data$Region)
+Figure_Total_ASVs$data$Region <- factor(Figure_Total_ASVs$data$Region, levels=newSTorder)
+  
+Figure_Total_ASVs
+
+ggsave(plot= Figure_Total_ASVs, 
+       filename = here("analysis","figures","Figure_Total_ASVs.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+##### ASVs per Site
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  filter(sum.taxonomy !="") %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region, Site, Sample) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  group_by(Region, Site) %>% 
+  dplyr::summarise(Total_samples = n_distinct(Sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs), max_ASVs= max(Total_ASVs)) -> asvs_per_site
+
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-5)) %>%
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  mutate(., Region="Southern California") %>% 
+   group_by(Region, Site, sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+    group_by(Region,Site) %>% 
+  dplyr::summarise(Total_samples = n_distinct(sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs), max_ASVs= max(Total_ASVs))  -> asvs_per_site_CA
+
+
+asvs_per_site <- rbind(asvs_per_site, asvs_per_site_CA)
+
+
+
+newSTorder %>% as.tibble() %>% dplyr::select(Region=value) -> newSTorder_tib
+  newSTorder_tib$num <- rownames(newSTorder_tib)
+  
+asvs_per_site %>% 
+  left_join(newSTorder_tib) %>% arrange(num)-> asvs_per_site
+
+
+newSTorder2 = asvs_per_site$Site
+
+col.mor8
+col.mor8_diff
+col.mor8_diff_2 <- c(col.mor8_diff[1],
+                     col.mor8_diff[2],
+                     col.mor8_diff[3],
+                     col.mor8_diff[5],
+                     col.mor8_diff[7],
+                     col.mor8_diff[8],
+                     col.mor8_diff[6],
+                     col.mor8_diff[4])
+show_col(col.mor8_diff_2)
+
+Figure_Mean_ASVs_per_site <- asvs_per_site %>% ggplot(., aes(x=Site, y=mean_ASVs)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Mean ASVs per Site") +
+  geom_errorbar(aes(ymin=mean_ASVs-sd_ASVs, ymax=mean_ASVs+sd_ASVs), width=.2,
+                 position=position_dodge(.9))  + scale_fill_manual(values=col.mor8_diff_2) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text.y=element_text(size=16),axis.text.x=element_text(size=8),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20)) 
+
+Figure_Mean_ASVs_per_site$data$Site <- as.character(Figure_Mean_ASVs_per_site$data$Site)
+
+Figure_Mean_ASVs_per_site$data$Site <- factor(Figure_Mean_ASVs_per_site$data$Site, levels=newSTorder2)
+  
+Figure_Mean_ASVs_per_site
+
+ggsave(plot= Figure_Mean_ASVs_per_site, 
+       filename = here("analysis","figures","Figure_Mean_ASVs_per_site.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+ggsave(plot= Figure_Mean_ASVs_per_site, 
+       filename = here("analysis","figures","Figure_Mean_ASVs_per_site.tiff"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      units = c("in"))
+
+```
+
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  group_by(Region, Site, Sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  dplyr::summarise(Total_samples = n_distinct(Sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs), max_ASVs= max(Total_ASVs))
+
+```
+##### ASVs per Site Averaged by Region
+
+```{r}
+
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region, Site) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  group_by(Region) %>% 
+  dplyr::summarise(Total_Sites = n_distinct(Site), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs)) -> asvs_per_site_region
+
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-5)) %>%
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number))
+
+
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-3)) %>%
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  group_by(Site) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>%
+    mutate(., Region = "Southern California") %>%
+  group_by(Region) %>% 
+  dplyr::summarise(Total_Sites = n_distinct(Site), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs)) -> asvs_per_site_region_CA
+
+asvs_per_site_region <- rbind(asvs_per_site_region, asvs_per_site_region_CA)
+
+
+Figure_Mean_ASVs_per_site_region <- asvs_per_site_region %>% ggplot(., aes(x=Region, y=mean_ASVs)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8_diff) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Mean ASVs per Site")+
+  geom_errorbar(aes(ymin=mean_ASVs-sd_ASVs, ymax=mean_ASVs+sd_ASVs), width=.2,
+                 position=position_dodge(.9)) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text.y=element_text(size=16),axis.text.x=element_text(size=16),
+        axis.title=element_text(size=16,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=16)) 
+  
+Figure_Mean_ASVs_per_site_region$data$Region <- as.character(Figure_Mean_ASVs_per_site_region$data$Region)
+Figure_Mean_ASVs_per_site_region$data$Region <- factor(Figure_Mean_ASVs_per_site_region$data$Region, levels=newSTorder)
+  
+Figure_Mean_ASVs_per_site_region
+
+ggsave(plot= Figure_Mean_ASVs_per_site_region, 
+       filename = here("analysis","figures","Figure_Mean_ASVs_per_site_region.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+
+```
+
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  mutate(., CA = if_else(Region =="Southern California","SoCal","Indo")) %>%
+  group_by(CA,Region, Site) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  group_by(CA) %>% 
+  dplyr::summarise(Total_Sites = n_distinct(Site), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs))
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-3)) %>%
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  group_by(Site) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>%
+    mutate(., Region = "Southern California") %>%
+  group_by(Region) %>% 
+  dplyr::summarise(Total_Sites = n_distinct(Site), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs))
+
+```
+##### ASVs per Sample averaged by Region
+
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region, Site, Sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number))  %>% View()
+  
+  ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-3)) %>%
+  group_by(Site, sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>%
+      filter(., !sample %in% taylor_samples$sample) %>% View()
+
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region, Site, Sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  group_by(Region) %>% 
+  dplyr::summarise(Total_samples = n_distinct(Sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs)) -> asvs_per_region
+
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-3)) %>%
+  group_by(Site, sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>%
+  filter(., !sample %in% taylor_samples$sample) %>% 
+
+  dplyr::summarise(Total_samples = n_distinct(sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs)) %>% 
+  mutate(., Region = "Southern California") %>% 
+  dplyr::select(Region,Total_samples,mean_ASVs, sd_ASVs)-> asvs_per_region_CA
+
+asvs_per_region <- rbind(asvs_per_region, asvs_per_region_CA)
+
+
+asvs_per_region %>% 
+  left_join(newSTorder_tib) %>% arrange(num)-> asvs_per_region
+
+Figure_Mean_ASVs_per_sample <- asvs_per_region %>% ggplot(., aes(x=Region, y=mean_ASVs)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8_diff) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Mean ASVs per Sample")+
+  geom_errorbar(aes(ymin=mean_ASVs-sd_ASVs, ymax=mean_ASVs+sd_ASVs), width=.2,
+                 position=position_dodge(.9)) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text.y=element_text(size=16),axis.text.x=element_text(size=16),
+        axis.title=element_text(size=16,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=16)) 
+  
+Figure_Mean_ASVs_per_sample$data$Region <- as.character(Figure_Mean_ASVs_per_sample$data$Region)
+Figure_Mean_ASVs_per_sample$data$Region <- factor(Figure_Mean_ASVs_per_sample$data$Region, levels=newSTorder)
+  
+Figure_Mean_ASVs_per_sample
+
+ggsave(plot= Figure_Mean_ASVs_per_sample, 
+       filename = here("analysis","figures","Figure_Mean_ASVs_per_sample.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+
+```
+
+## Figure 2 ASVs
+```{r}
+library(egg)
+library(ggpubr)
+fig_asvs_complete <- ggarrange(ggarrange(Figure_Mean_ASVs_per_site_region, Figure_Total_ASVs, ncol = 2, labels = c("A", "B")),
+          Figure_Mean_ASVs_per_sample,
+          nrow = 2, 
+          labels = c("","C"))  
+ 
+
+
+ggsave(plot= fig_asvs_complete, 
+       filename = here("analysis","figures","fig_asvs_complete.eps"),
+       width=16,
+       height = 12,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+ggsave(plot= fig_asvs_complete, 
+       filename = here("analysis","figures","fig_asvs_complete.tiff"),
+       width=16,
+       height = 12,
+       dpi = 400,
+      units = c("in"))
+
+```
+
+# ANOVA Richness
+
+### ASVs per Sample
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+  left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region, Site, Sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() -> tot_asvs
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-5)) %>%
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  mutate(., Region="Southern California") %>% 
+   group_by(Region, Site, sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% dplyr::select(Region,Site,Sample=sample,Total_ASVs) -> tot_asvs_ca
+tot_asvs <- rbind(tot_asvs, tot_asvs_ca)
+
+# Are the mean ASVs per Site different?
+obj <- aov(as.formula(paste("Total_ASVs", "~" , "Site")), tot_asvs) 
+broom::tidy(obj) %>% kable()
+#Yes Very
+broom::tidy(TukeyHSD(obj)) %>%  View()
+broom::tidy(TukeyHSD(obj)) %>% write.csv( file="test_tukey.csv", quote = TRUE) 
+#Supplemental Table 6
+```
+
+```{r}
+#Are the mean ASVs per Region different
+obj <- aov(as.formula(paste("Total_ASVs", "~" , "Region")), tot_asvs) 
+broom::tidy(obj) %>% kable()
+#Yes very different
+broom::tidy(TukeyHSD(obj)) %>%  View()
+broom::tidy(TukeyHSD(obj)) %>% write.csv( file="test_tukey2.csv", quote = TRUE) 
+tot_asvs %>%  View()
+#Supplemental Table 5
+```
+
+### ASVs per Site
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+  filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region, Site) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() -> tot_asvs_site
+
+ASV.nested.mpa %>% 
+  dplyr::select(Step3.tibble.edited,Miseq_run) %>% 
+  unnest() %>% 
+  filter(sum.taxonomy !="") %>% 
+  mutate(., Site = str_sub(sample,1,-5)) %>%
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  mutate(., Region="Southern California") %>% 
+   group_by(Region, Site) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() -> tot_asvs_site_ca
+tot_asvs_site_ca %>%  View()
+tot_asvs_site <- rbind(tot_asvs_site, tot_asvs_site_ca)
+tot_asvs_site %>% View()
+
+
+obj <- aov(as.formula(paste("Total_ASVs", "~" , "Region")), tot_asvs_site) 
+broom::tidy(obj) %>% kable()
+broom::tidy(TukeyHSD(obj)) %>% write.csv( file="test_tukey3.csv", quote = TRUE) 
+broom::tidy(TukeyHSD(obj)) %>% View()
+#Supplememntal Table 7
+```
+
+
+
+```{r}
+#Alpha diversity across habitats
+
+t <- plot_richness(physeq_asv_reads, x = ("Region"), measures = c("Observed","Chao","Shannon")) +
+  geom_boxplot(aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8_diff) +
+  theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1))
+
+t$data$Region <- as.character(t$data$Region)
+t$data$Region <- factor(t$data$Region, levels=newSTorder)
+ 
+t 
+
+ggsave(plot= t , 
+       filename = here("analysis","figures","Figure_ASV_diversity_per_sample.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+```
+
+```{r}
+#Alpha diversity across habitats
+
+t <- plot_richness(physeq_asv_site, x = ("Region"), measures = c("Observed","Chao","Shannon")) +
+  geom_boxplot(aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8) +
+  theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1))
+
+t$data$Region <- as.character(t$data$Region)
+t$data$Region <- factor(t$data$Region, levels=newSTorder)
+
+t 
+
+ggsave(plot= t , 
+       filename = here("analysis","figures","Figure_ASV_diversity_per_site.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+```
+
+```{r}
+# to get a p-value associated with alpha diversity
+alpha.diversity <- estimate_richness(physeq_asv_reads, measures = c("Observed", "Chao1", "Shannon"))
+data <- cbind(sample_data(physeq_asv_reads), alpha.diversity)
+
+obj <- aov(as.formula(paste("Observed", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj))) %>%  View()
+
+obj <- aov(as.formula(paste("Chao1", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+obj <- aov(as.formula(paste("Shannon", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+```
+
+From these results we can see that the highest total ASV diversity was observed in Raja Ampat, but that on a per sample basis it had similar ASV diversity. This tells us that there is low overlap in species between sample replicates. In contrast, Batam Bintam had the lowest observed total diversity and one of the highest observed average per sample diversity. This is unexpected, but suggests that there is very little difference in species diversity between samples. These results strongly suggest that in higher diversity environments a single eDNA sample is dramatically undersampling the diversity.
+
+```{r}
+# to get a p-value associated with alpha diversity
+alpha.diversity <- estimate_richness(physeq_asv_site, measures = c("Observed", "Chao1", "Shannon"))
+data <- cbind(sample_data(physeq_asv_site), alpha.diversity)
+
+obj <- aov(as.formula(paste("Observed", "~" , "Region")), data)
+print(broom::tidy(obj))
+
+print(broom::tidy(TukeyHSD(obj))) %>% View()
+
+obj <- aov(as.formula(paste("Chao1", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+obj <- aov(as.formula(paste("Shannon", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+```
+
+### All Species
+
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(hash.key.updated_12S) %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region) %>% 
+  separate(sum.taxonomy, into = c("Domain","Phylum","Class","Order","Family","Genus","Species"), remove=F, sep=";") %>% 
+  filter(., Species!="") %>% 
+  dplyr::summarise(Total_Species=n_distinct(sum.taxonomy)) -> tot_species_region
+```
+
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region) %>% 
+    left_join(hash.key.updated_12S) %>% 
+  separate(sum.taxonomy, into = c("Domain","Phylum","Class","Order","Family","Genus","Species"), remove=F, sep=";") %>% 
+  filter(., Species!="") %>% 
+  dplyr::summarise(Total_Species=n_distinct(sum.taxonomy), ASVs_to_species_level =n_distinct(seq_number)) -> tot_species_region
+
+tot_species_region %>% 
+  left_join(tot_asvs_region) %>% 
+  mutate(., perc_species = ASVs_to_species_level/Total_ASVs*100 ) %>% kable()
+```
+
+```{r}
+
+tot_species_region %>% 
+  left_join(tot_asvs_region) %>% 
+  mutate( perc_species = ASVs_to_species_level/Total_ASVs*100)
+
+
+```
+
+
+```{r}
+newSTorder = c("Aceh", "Batam Bintam" ,"Derawan","Wakatobi","Lembeh Strait","Ternate","Raja Ampat")
+
+
+p1 <- tot_species_region %>% ggplot(., aes(x=Region, y=Total_Species)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Total Species")
+
+p1$data$Region <- as.character(p1$data$Region)
+p1$data$Region <- factor(p1$data$Region, levels=newSTorder)
+  
+p1
+
+```
+
+
+```{r}
+#Alpha diversity across habitats
+
+t <- plot_richness(physeq_obj.step5_counts, x = ("Region"), measures = c("Observed","Chao","Shannon")) +
+  geom_boxplot(aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8) +
+  theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1))
+t$data$Region <- as.character(t$data$Region)
+t$data$Region <- factor(t$data$Region, levels=newSTorder)
+  
+t 
+```
+
+```{r}
+# to get a p-value associated with alpha diversity
+alpha.diversity <- estimate_richness(physeq_obj.step5_counts, measures = c("Observed", "Chao1", "Shannon"))
+data <- cbind(sample_data(physeq_obj.step5_counts), alpha.diversity)
+
+obj <- aov(as.formula(paste("Observed", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+obj <- aov(as.formula(paste("Chao1", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+obj <- aov(as.formula(paste("Shannon", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+```
+
+We find highly concordant results between species and ASVs
+
+#### Fancy Graph
+```{r}
+# Anova between sites
+
+alpha.diversity <- estimate_richness(physeq_obj.step5_counts, measures = c("Observed"))
+data <- cbind(sample_data(physeq_obj.step5_counts), alpha.diversity)
+
+model=lm(data$Observed ~ data$Region)
+ANOVA=aov(model)
+summary(ANOVA)
+
+```
+
+```{r}
+# Tukey test to study each pair of treatment :
+data$Region <- as.factor(data$Region) #ensure that Sites are factors
+TUKEY <- TukeyHSD(x=ANOVA, 'data$Region', conf.level=0.95)
+TUKEY
+```
+
+```{r}
+#Function for determining signficant Groups from Tukey
+generate_label_df <- function(TUKEY, variable){
+  
+  # Extract labels and factor levels from Tukey post-hoc 
+  Tukey.levels <- TUKEY[[variable]][,4]
+  Tukey.labels <- data.frame(multcompLetters(Tukey.levels)['Letters'])
+  
+  #I need to put the labels in the same order as in the boxplot :
+  Tukey.labels$treatment=rownames(Tukey.labels)
+  Tukey.labels=Tukey.labels[order(Tukey.labels$treatment) , ]
+  return(Tukey.labels)
+}
+
+#Determine Groups of Samples
+labels<-generate_label_df(TUKEY , "data$Region") #generate labels of groups using function
+names(labels)<-c('Letters','Region') #rename columns for merging
+
+#Obtain letter position for y axis using means
+yvalue<-aggregate(Observed~Region, data=data, mean) 
+
+final<-merge(labels,yvalue) #merge dataframes
+
+# Plot Boxplot of Observed Species w/ Signficant Groups labeled
+t <- plot_richness(physeq_obj.step5_counts, x = ("Region"), measures = c("Observed")) +
+  geom_violin(aes_string(fill = "Region", alpha=0.2), width=0.75, trim=FALSE) + scale_fill_manual(values= col.mor8) + geom_boxplot(width=0.1)+
+  theme_bw() +theme(legend.position="none") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank()) +
+  geom_text(data = final, aes(x = Region, y = Observed, label = Letters),vjust=-15,hjust=.5) + ylab("Observed Species") +ggtitle("Observed Species Across Sites") + ylim(0,200) +theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"), axis.text.x = element_text(angle = 45,hjust = 1)) + theme(legend.text=element_text(size=28), legend.title=element_text(size=28)) +theme(
+  plot.title = element_text( size = 20, face = "bold"), plot.subtitle = element_text(color = "blue")) +  
+theme(
+  strip.background = element_blank(),
+  strip.text.x = element_blank()
+) + xlab("Station")
+
+t$data$Region <- as.character(t$data$Region)
+t$data$Region <- factor(t$data$Region, levels=newSTorder)
+t
+```
+
+## Raw Habitat Richness
+
+### All ASVs
+
+```{r}
+
+ASV.table_long %>% 
+  filter(., str_detect(seq_number, "12S_miu")) %>%  
+    left_join(hash.key.updated_12S) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  filter(sum.taxonomy !="") %>% 
+  filter(., reads >0) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region) %>% 
+  filter(., !is.na(Region)) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number), Total_samples = n_distinct(sample), Total_sites =n_distinct(Site))-> tot_asvs_region
+
+newSTorder = c("Aceh", "Batam Bintam" ,"Derawan","Wakatobi","Lembeh Strait","Ternate","Raja Ampat")
+
+
+p1 <- tot_asvs_region %>% 
+  ggplot(., aes(x=Region, y=Total_ASVs)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8_diff) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Total ASVs") + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20)) 
+
+p1$data$Region <- as.character(p1$data$Region)
+p1$data$Region <- factor(p1$data$Region, levels=newSTorder)
+  
+p1
+
+ggsave(plot= p1, 
+       filename = here("analysis","figures","Figure_Raw_Total_ASVs.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+```{r}
+
+ASV.table_long %>% 
+  filter(., str_detect(seq_number, "12S_miu")) %>%  
+  filter(., reads >0) %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., !is.na(Region)) %>% 
+  group_by(Region, Site, Sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  group_by(Region, Site) %>% 
+  dplyr::summarise(Total_samples = n_distinct(Sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs), max_ASVs= max(Total_ASVs)) -> asvs_per_site
+
+
+newSTorder %>% as.tibble() %>% dplyr::select(Region=value) -> newSTorder_tib
+
+newSTorder_tib$num <- rownames(newSTorder_tib)
+  
+asvs_per_site %>% 
+  left_join(newSTorder_tib) %>% arrange(num)-> asvs_per_site
+
+
+newSTorder2 = asvs_per_site$Site
+
+
+p1 <- asvs_per_site %>% ggplot(., aes(x=Site, y=mean_ASVs)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Mean ASVs per Site") +
+  geom_errorbar(aes(ymin=mean_ASVs-sd_ASVs, ymax=mean_ASVs+sd_ASVs), width=.2,
+                 position=position_dodge(.9))  + scale_fill_manual(values=col.mor8) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text.y=element_text(size=16),axis.text.x=element_text(size=10),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20)) 
+  
+p1$data$Site <- as.character(p1$data$Site)
+p1$data$Site <- factor(p1$data$Site, levels=newSTorder2)
+  
+p1
+
+
+ggsave(plot= p1, 
+       filename = here("analysis","figures","Figure_Raw_Mean_ASVs_per_site.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+```{r}
+
+ASV.table_long %>% 
+  filter(., str_detect(seq_number, "12S_miu")) %>%  
+  filter(., reads >0) %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., !is.na(Region)) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  group_by(Region, Site, Sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  dplyr::summarise(Total_samples = n_distinct(Sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs), max_ASVs= max(Total_ASVs))
+
+```
+
+```{r}
+
+
+ASV.table_long %>% 
+  filter(., str_detect(seq_number, "12S_miu")) %>%  
+  filter(., reads >0) %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  filter(., !is.na(Region)) %>% 
+  group_by(Region, Site, Sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  group_by(Region) %>% 
+  dplyr::summarise(Total_samples = n_distinct(Sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs)) -> asvs_per_region
+
+
+ASV.table_long_mpa %>% 
+  filter(., reads >0) %>%
+  filter(sum.taxonomy !="") %>% 
+    filter(., !sample %in% taylor_samples$sample) %>% 
+  mutate(., Site =str_sub(sample, 1, -3)) %>% 
+  group_by(Site, sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() %>% 
+  dplyr::summarise(Total_samples = n_distinct(sample), mean_ASVs = mean(Total_ASVs), sd_ASVs =sd(Total_ASVs)) %>% 
+  mutate(., Region = "Southern California") %>% 
+  dplyr::select(Region,Total_samples,mean_ASVs, sd_ASVs)-> asvs_per_region_CA
+
+asvs_per_region <- rbind(asvs_per_region, asvs_per_region_CA)
+
+newSTorder3 = c(newSTorder,"Southern California")
+
+asvs_per_region %>% 
+  left_join(newSTorder_tib) %>% arrange(num)-> asvs_per_region
+
+p1 <- asvs_per_region %>% ggplot(., aes(x=Region, y=mean_ASVs)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8_diff) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Mean ASVs per Sample")+
+  geom_errorbar(aes(ymin=mean_ASVs-sd_ASVs, ymax=mean_ASVs+sd_ASVs), width=.2,
+                 position=position_dodge(.9)) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text.y=element_text(size=16),axis.text.x=element_text(size=10),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20)) 
+  
+p1$data$Region <- as.character(p1$data$Region)
+p1$data$Region <- factor(p1$data$Region, levels=newSTorder3)
+  
+p1
+
+ggsave(plot= p1, 
+       filename = here("analysis","figures","Figure_Raw_Mean_ASVs_per_sample.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+
+```
+
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region, Site, Sample) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() -> tot_asvs
+
+obj <- aov(as.formula(paste("Total_ASVs", "~" , "Site")), tot_asvs) 
+broom::tidy(obj) %>% kable()
+broom::tidy(TukeyHSD(obj)) %>% write.csv( file="test_tukey", quote = TRUE) 
+```
+
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+  filter(., str_detect(seq_number, "12S_miu")) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  group_by(Region, Site) %>% 
+  dplyr::summarise(Total_ASVs=n_distinct(seq_number)) %>% 
+  ungroup() -> tot_asvs_site
+
+obj <- aov(as.formula(paste("Total_ASVs", "~" , "Region")), tot_asvs_site) 
+broom::tidy(obj) %>% kable()
+broom::tidy(TukeyHSD(obj)) %>% kable()
+
+```
+
+
+
+```{r}
+#Alpha diversity across habitats
+
+t <- plot_richness(physeq_asv_reads, x = ("Region"), measures = c("Observed","Chao","Shannon")) +
+  geom_boxplot(aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8_diff) +
+  theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1))
+t$data$Region <- as.character(t$data$Region)
+t$data$Region <- factor(t$data$Region, levels=newSTorder)
+
+
+t 
+
+ggsave(plot= t , 
+       filename = here("analysis","figures","Figure_ASV_diversity_per_sample.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+```
+
+```{r}
+#Alpha diversity across habitats
+
+t <- plot_richness(physeq_asv_site, x = ("Region"), measures = c("Observed","Chao","Shannon")) +
+  geom_boxplot(aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8_diff) +
+  theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1))
+t$data$Region <- as.character(t$data$Region)
+t$data$Region <- factor(t$data$Region, levels=newSTorder)
+
+
+t 
+ 
+ggsave(plot= t , 
+       filename = here("analysis","figures","Figure_ASV_diversity_per_site.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+```
+
+```{r}
+# to get a p-value associated with alpha diversity
+alpha.diversity <- estimate_richness(physeq_asv_reads, measures = c("Observed", "Chao1", "Shannon"))
+data <- cbind(sample_data(physeq_asv_reads), alpha.diversity)
+
+obj <- aov(as.formula(paste("Observed", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj))) %>% write.csv( file="test_tukey2", quote = TRUE) 
+
+obj <- aov(as.formula(paste("Chao1", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+obj <- aov(as.formula(paste("Shannon", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+```
+
+From these results we can see that the highest total ASV diversity was observed in Raja Ampat, but that on a per sample basis it had similar ASV diversity. This tells us that there is low overlap in species between sample replicates. In contrast, Batam Bintam had the lowest observed total diversity and one of the highest observed average per sample diversity. This is unexpected, but suggests that there is very little difference in species diversity between samples. These results strongly suggest that in higher diversity environments a single eDNA sample is dramatically undersampling the diversity.
+
+```{r}
+# to get a p-value associated with alpha diversity
+alpha.diversity <- estimate_richness(physeq_asv_site, measures = c("Observed", "Chao1", "Shannon"))
+data <- cbind(sample_data(physeq_asv_site), alpha.diversity)
+
+obj <- aov(as.formula(paste("Observed", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj))) %>% write.csv( file="test_tukey2", quote = TRUE) 
+
+obj <- aov(as.formula(paste("Chao1", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+obj <- aov(as.formula(paste("Shannon", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+```
+
+### All Species
+
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+  filter(sum.taxonomy !="") %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(hash.key.updated_12S) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region) %>% 
+  separate(sum.taxonomy, into = c("Domain","Phylum","Class","Order","Family","Genus","Species"), remove=F, sep=";") %>% 
+  filter(., Species!="") %>% 
+  dplyr::summarise(Total_Species=n_distinct(sum.taxonomy)) -> tot_species_region
+```
+
+```{r}
+
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    left_join(hash.key.updated_12S) %>% 
+  filter(sum.taxonomy !="") %>% 
+      filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  group_by(Region) %>% 
+  separate(sum.taxonomy, into = c("Domain","Phylum","Class","Order","Family","Genus","Species"), remove=F, sep=";") %>% 
+  filter(., Species!="") %>% 
+  dplyr::summarise(Total_Species=n_distinct(sum.taxonomy), ASVs_to_species_level =n_distinct(seq_number)) -> tot_species_region
+
+tot_species_region %>% 
+  left_join(tot_asvs_region) %>% 
+  mutate(., perc_species = ASVs_to_species_level/Total_ASVs*100 ) %>% kable()
+```
+
+```{r}
+
+tot_species_region %>% 
+  left_join(tot_asvs_region) %>% 
+  mutate( perc_species = ASVs_to_species_level/Total_ASVs*100)
+
+
+```
+
+
+```{r}
+newSTorder = c("Aceh", "Batam Bintam" ,"Derawan","Wakatobi","Lembeh Strait","Ternate","Raja Ampat")
+
+
+p1 <- tot_species_region %>% ggplot(., aes(x=Region, y=Total_Species)) +geom_bar(stat="identity", aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8) +theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1)) + ylab("Total Species")
+
+p1$data$Region <- as.character(p1$data$Region)
+p1$data$Region <- factor(p1$data$Region, levels=newSTorder)
+  
+p1
+
+```
+
+
+```{r}
+#Alpha diversity across habitats
+
+t <- plot_richness(physeq_obj.step5_counts, x = ("Region"), measures = c("Observed","Chao","Shannon")) +
+  geom_boxplot(aes_string(fill = "Region", alpha=0.2)) + scale_fill_manual(values=col.mor8) +
+  theme_bw() + theme_ranacapa() +theme(legend.position="none") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.95, hjust=1))
+t$data$Region <- as.character(t$data$Region)
+t$data$Region <- factor(t$data$Region, levels=newSTorder)
+  
+t 
+```
+
+```{r}
+# to get a p-value associated with alpha diversity
+alpha.diversity <- estimate_richness(physeq_obj.step5_counts, measures = c("Observed", "Chao1", "Shannon"))
+data <- cbind(sample_data(physeq_obj.step5_counts), alpha.diversity)
+
+obj <- aov(as.formula(paste("Observed", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+obj <- aov(as.formula(paste("Chao1", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+obj <- aov(as.formula(paste("Shannon", "~" , "Region")), data)
+print(broom::tidy(obj))
+print(broom::tidy(TukeyHSD(obj)))
+
+```
+
+We find highly concordant results between species and ASVs
+
+#### Fancy Graph
+```{r}
+# Anova between sites
+
+alpha.diversity <- estimate_richness(physeq_obj.step5_counts, measures = c("Observed"))
+data <- cbind(sample_data(physeq_obj.step5_counts), alpha.diversity)
+
+model=lm(data$Observed ~ data$Region)
+ANOVA=aov(model)
+summary(ANOVA)
+
+```
+
+```{r}
+# Tukey test to study each pair of treatment :
+data$Region <- as.factor(data$Region) #ensure that Sites are factors
+TUKEY <- TukeyHSD(x=ANOVA, 'data$Region', conf.level=0.95)
+TUKEY
+```
+
+```{r}
+#Function for determining signficant Groups from Tukey
+generate_label_df <- function(TUKEY, variable){
+  
+  # Extract labels and factor levels from Tukey post-hoc 
+  Tukey.levels <- TUKEY[[variable]][,4]
+  Tukey.labels <- data.frame(multcompLetters(Tukey.levels)['Letters'])
+  
+  #I need to put the labels in the same order as in the boxplot :
+  Tukey.labels$treatment=rownames(Tukey.labels)
+  Tukey.labels=Tukey.labels[order(Tukey.labels$treatment) , ]
+  return(Tukey.labels)
+}
+
+#Determine Groups of Samples
+labels<-generate_label_df(TUKEY , "data$Region") #generate labels of groups using function
+names(labels)<-c('Letters','Region') #rename columns for merging
+
+#Obtain letter position for y axis using means
+yvalue<-aggregate(Observed~Region, data=data, mean) 
+
+final<-merge(labels,yvalue) #merge dataframes
+
+  geom_text(data = final, aes(x = Region, y = Observed, label = Letters),vjust=-15,hjust=.5)
+
+# Plot Boxplot of Observed Species w/ Signficant Groups labeled
+t <- plot_richness(physeq_obj.step5_counts, x = ("Region"), measures = c("Observed")) +
+  geom_violin(aes_string(fill = "Region", alpha=0.2), width=0.75, trim=FALSE) + scale_fill_manual(values= col.mor8) + geom_boxplot(width=0.1)+
+  theme_bw() +theme(legend.position="none") + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank()) +
+  geom_text(data = final, aes(x = Region, y = Observed, label = Letters),vjust=-15,hjust=.5) + ylab("Observed Species") +ggtitle("Observed Species Across Sites") + ylim(0,200) +theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"), axis.text.x = element_text(angle = 45,hjust = 1)) + theme(legend.text=element_text(size=28), legend.title=element_text(size=28)) +theme(
+  plot.title = element_text( size = 20, face = "bold"), plot.subtitle = element_text(color = "blue")) +  
+theme(
+  strip.background = element_blank(),
+  strip.text.x = element_blank()
+) + xlab("Station")
+
+t$data$Region <- as.character(t$data$Region)
+t$data$Region <- factor(t$data$Region, levels=newSTorder)
+t
+```
+
+# Power Analysis
+### iNEXT
+```{r}
+#isolate groups
+Aceh <- subset_samples(physeq_obj.step5_counts, Region=="Aceh")
+Batam <- subset_samples(physeq_obj.step5_counts, Region=="Batam Bintam")
+Derawan <- subset_samples(physeq_obj.step5_counts, Region=="Derawan")
+Wakatobi <- subset_samples(physeq_obj.step5_counts, Region=="Wakatobi")
+Lembeh <- subset_samples(physeq_obj.step5_counts, Region=="Lembeh Strait")
+Ternate <- subset_samples(physeq_obj.step5_counts, Region=="Ternate")
+Raja <- subset_samples(physeq_obj.step5_counts, Region=="Raja Ampat")
+
+
+#Convert groups into vegan outputs
+veganComm2 <- vegan_otu(physeq_obj.step5_counts)
+veganComm_Aceh <- vegan_otu(Aceh)
+veganComm_Batam <- vegan_otu(Batam)
+veganComm_Derawan <- vegan_otu(Derawan)
+veganComm_Wakatobi <- vegan_otu(Wakatobi)
+veganComm_Lembeh <- vegan_otu(Lembeh)
+veganComm_Ternate <- vegan_otu(Ternate)
+veganComm_Raja <- vegan_otu(Raja)
+View(veganComm_Raja)
+
+#CA Samples
+asv_mpa_longer %>% 
+  dplyr::select(sample, sum.taxonomy,nReads) %>% 
+  group_by(sample, sum.taxonomy) %>% 
+  dplyr::summarise(nReads=sum(nReads)) %>% 
+  ungroup() %>% 
+  pivot_wider(., names_from=sum.taxonomy, values_from=nReads, values_fill=0) -> asv_mpa_species
+asv_mpa_species%>% as.matrix()-> asv_mpa_species_vegan
+
+rownames(asv_mpa_species_vegan) <- asv_mpa_species$sample
+View(asv_mpa_species_vegan)
+vegansd = data.frame(sample_data(physeq_obj.step5_counts))
+
+###### iNEXT Species Accumulation Curves
+
+#Create List for iNEXT Species Incidence Frequencies
+mor_inc <-list ("Aceh" =t(veganComm_Aceh),
+                "Batam Bintam"=t(veganComm_Batam),
+                "Derawan"=t(veganComm_Derawan),
+                "Wakatobi"=t(veganComm_Wakatobi),
+                "Lembeh Strait"=t(veganComm_Lembeh),
+                "Ternate"=t(veganComm_Ternate),
+                "Raja Ampat"=t(veganComm_Raja),
+                "Southern California" = t(asv_mpa_species_vegan))
+
+species_incidence <-lapply(mor_inc, as.incfreq)
+
+#Convert to iNEXT format
+t <- seq(1, 35, by=1)
+out.inc2 <- iNEXT(species_incidence, q=0, datatype="incidence_freq", size=t)
+
+out.inc2$DataInfo
+out.inc2$iNextEst$`Batam Bintam`
+```
+
+```{r}
+#Sample‐size‐based R/E curves
+t <- ggiNEXT(out.inc2, type=1, color.var="site") + 
+  theme_bw(base_size = 18) + scale_fill_manual(values=col.mor8_diff_2) +  scale_color_manual(values=col.mor8_diff_2) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") + ylab("Species")
+
+t$data$site <- as.character(t$data$site)
+t$data$site <- factor(t$data$site, levels=newSTorder)
+t
+```
+
+These results demonstrate that at all sites except Batam Bintam we are severly undersampling fish diversity. This also points out that comparing by region is clearly not fair since there is different sampling effort across regions. However, looking across region generally, these results line up how we expect them to with Aceh and Batam Bintam having the lowest diversity while regions within the heart of the coral triangle have higher diversity.
+
+
+
+```{r}
+#Sample‐size‐based R/E curves
+ggiNEXT(out.inc2, type=3, color.var="site") + 
+  theme_bw(base_size = 18) + scale_fill_manual(values=col.mor8_diff_2) +  scale_color_manual(values=col.mor8_diff_2) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) 
+
+
+```
+
+
+##Sample Read Depth
+
+### ASVs
+```{r}
+
+     
+gg1 <- ggrare(physeq_asv_reads, color ="Site") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank()) + theme(axis.text=element_text(size=16),axis.title=element_text(size=20,face="bold")) +
+  theme(legend.title = element_blank()) +
+  theme(strip.background = element_blank(),strip.text.x = element_blank()) + ylab("ASV Richness")
+
+gg1 <- gg1 +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+              labels = trans_format("log10", math_format(10^.x)))
+
+ggsave(plot= gg1, 
+       filename = here("analysis","figures","Sup_Fig_asv_rare.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+```
+
+### Miu Raw
+```{r}
+
+     
+gg2 <- ggrare(physeq_asv_miu_raw, color ="Site") +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank()) + theme(axis.text=element_text(size=16),axis.title=element_text(size=20,face="bold")) +
+  theme(legend.title = element_blank()) +
+  theme(strip.background = element_blank(),strip.text.x = element_blank()) +
+  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
+              labels = trans_format("log10", math_format(10^.x))) + ylab("MiFish Teleost ASVs")
+
+ggsave(plot= gg2, 
+       filename = here("analysis","figures","Sup_Fig_asv_miu_raw_rare.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+```
+
+
+## ASVs
+### iNEXT Samples
+```{r}
+#isolate groups
+newSTorder
+
+iNext_subset <- function(physeq_obj, variable_of_choice){
+  
+  # Subset Phyloseq Object 
+    sample_data_holder <- as.tibble(sample_data(physeq_obj))
+    var.levels <- sample_data_holder %>% dplyr::select(variable_of_choice) %>% unique() %>%       as.data.frame() %>% as.list()
+  
+  
+    subset_phy_df <- matrix(list(), ncol = 2, nrow = length(var.levels[[1]]))
+    for (i in 1:length(var.levels[[1]])) {
+        remove_idx = as.character(get_variable(physeq_obj,variable_of_choice )) ==                  var.levels[[1]][i]
+        subset_phy_df[[i]] <- prune_samples(remove_idx, physeq_obj)
+     }
+  
+  #Convert groups into vegan outputs
+    for (i in 1:length(var.levels[[1]])) {
+        subset_phy_df[,2][[i]] <- t(vegan_otu(subset_phy_df[[i]]))
+    }
+  
+  #Create List for iNEXT Species Incidence Frequencies
+    mor_inc <-list()
+    for (i in 1:length(var.levels[[1]])) {
+        mor_inc[[paste0(var.levels[[1]][[i]])]] = subset_phy_df[,2][[i]]
+    }
+  # Species Incidence Calculation
+    species_incidence <-lapply(mor_inc, as.incfreq)
+}
+
+physeq_asv_reads
+
+iNext_subset(physeq_asv_reads,"Region") -> species_incidence
+
+#MPA ASV Incidence
+iNext_subset(physeq_asv_mpa_reads,"Region") -> species_incidence_mpa
+
+species_incidence$`Southern California` <- species_incidence_mpa$`Southern California`
+#Convert to iNEXT format
+t <- seq(1, 50, by=1)
+out.inc <- iNEXT(species_incidence, q=0, datatype="incidence_freq", size=t)
+
+t <- seq(1, 300, by=1)
+out.inc_save <- iNEXT(species_incidence, q=0, datatype="incidence_freq", size=t)
+out.inc_save$iNextEst$`Raja Ampat` %>%  View()
+out.inc_save$iNextEst$`Raja Ampat` %>% write.csv( file="Raja Ampat.csv", quote = TRUE) 
+out.inc_save$iNextEst$`Lembeh Strait` %>% write.csv( file="Lembeh Strait.csv", quote = TRUE)
+out.inc_save$iNextEst$`Batam Bintam` %>% write.csv( file="Batam Bintam.csv", quote = TRUE)
+out.inc_save$iNextEst$Derawan %>% write.csv( file="Derawan.csv", quote = TRUE) 
+out.inc_save$iNextEst$Aceh %>% write.csv( file="Aceh.csv", quote = TRUE) 
+out.inc_save$iNextEst$Ternate %>% write.csv( file="Ternate.csv", quote = TRUE) 
+out.inc_save$iNextEst$Wakatobi %>% write.csv( file="Wakatobi.csv", quote = TRUE) 
+out.inc_save$iNextEst$`Southern California` %>% write.csv( file="SoCal.csv", quote = TRUE) 
+out.inc_save
+
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+fig_2a <- ggiNEXT(out.inc, type=1, color.var="site") + 
+  theme_bw(base_size = 18) + scale_fill_manual(values=col.mor8_diff_2) +  scale_color_manual(values=col.mor8_diff_2) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank(), legend.position = "none") + xlab("Samples") +ylab("ASVs") + scale_shape_manual(values=c(7, 10, 17,13,16,8,18,5,15))
+
+```
+
+```{r}
+#Sample‐size‐based R/E curves
+fig_2c <- ggiNEXT(out.inc, type=2, color.var="site") + 
+  theme_bw(base_size = 18) + scale_fill_manual(values=col.mor8_diff_2) +  scale_color_manual(values=col.mor8_diff_2) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +guides(fill=guide_legend(title="Region"),color=guide_legend(title="Region"), shape=guide_legend(title="Region")) + scale_shape_manual(values=c(7, 10, 17,13,16,8,18,5,15))
+
+
+```
+
+```{r}
+#Sample‐size‐based R/E curves
+ggiNEXT(out.inc, type=2, color.var="site") + 
+  theme_bw(base_size = 18) + scale_fill_manual(values=col.mor8_diff_2) +  scale_color_manual(values=col.mor8_diff_2) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") 
+
+
+```
+
+```{r}
+#Sample‐size‐based R/E curves
+ggiNEXT(out.inc, type=3, color.var="site") + 
+  theme_bw(base_size = 18) + scale_fill_manual(values=col.mor8_diff_2) +  scale_color_manual(values=col.mor8_diff_2) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + ylab("ASVs")
+
+
+```
+
+### Subset Samples per Site
+
+
+```{r}
+iNext_subset(physeq_asv_reads,"Site") -> species_incidence_site
+
+#Convert to iNEXT format
+
+
+species_incidence_subset <- function(species_incidence, sample_metadata, variable_of_choice, site_var){
+  
+  # Subset Metadata Object 
+    var.levels <- sample_metadata %>% dplyr::select(variable_of_choice) %>% unique() %>%     as.data.frame() %>% as.list()
+  
+    subset_vars <- list()
+    
+    for (i in 1:length(var.levels[[1]])) {
+        subset_meta = sample_metadata[sample_metadata[[variable_of_choice[[1]]]] == var.levels[[1]][i],]
+        
+        subset_vars[[paste0(var.levels[[1]][[i]])]] <- subset_meta[[site_var[[1]]]] %>% unique()
+     }
+  
+    #Create List of Subsetted Species Incidence Frequencies
+    subset_incidence_site <- list()
+    for (i in 1:length(var.levels[[1]])) {
+       subset_incidence_site[[paste0(var.levels[[1]][[i]])]] <- species_incidence_site[subset_vars[[paste0(var.levels[[1]][[i]])]]]
+      
+    }
+    subset_incidence_site
+}
+
+sample_metadata <- as.tibble(sample_data(physeq_asv_reads))
+sample_metadata %>%  View()
+species_incidence_subset(species_incidence_site,sample_metadata,"Region","Site") -> species_incidence_site_1
+```
+
+
+##### Raja Ampat Site
+```{r}
+t <- seq(1, 10, by=1)
+out.inc_site_raja_ampat <- iNEXT(species_incidence_site_1$`Raja Ampat`, q=0, datatype="incidence_freq", size=t)
+
+namers <- names(out.inc_site_raja_ampat$iNextEst)
+
+out.inc_site_raja_ampat$iNextEst %>% tibble(Data=.) -> holder_4
+ holder_4$Site <-  namers
+ unnest_longer(holder_4, col=Data) -> raja_long
+ 
+ raja_long_df <- cbind(raja_long$Data, raja_long$Site)
+ 
+ raja_long_df %>% 
+  write.csv( file="Raja_site_samples.csv", quote = TRUE) 
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+
+spec_acc_raja <- ggiNEXT(out.inc_site_raja_ampat, type=1, color.var="site") + 
+  theme_bw(base_size = 18) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +ylab("ASVs")
+
+ggsave(plot= spec_acc_raja, 
+       filename = here("analysis","figures","Sup_Fig_raja.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+##### Lembeh Strait Site
+```{r}
+t <- seq(1, 10, by=1)
+out.inc_site_ls <- iNEXT(species_incidence_site_1$`Lembeh Strait`, q=0, datatype="incidence_freq", size=t)
+
+out.inc_site_ls$iNextEst
+
+namers <- names(out.inc_site_ls$iNextEst)
+
+out.inc_site_ls$iNextEst %>% tibble(Data=.) -> holder_4
+ holder_4$Site <-  namers
+ unnest_longer(holder_4, col=Data) -> ls_long
+ 
+ ls_long_df <- cbind(ls_long$Data, ls_long$Site)
+ 
+ ls_long_df %>% 
+  write.csv( file="Lembeh Strait_site_samples.csv", quote = TRUE) 
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+spec_acc_ls <- ggiNEXT(out.inc_site_ls, type=1, color.var="site") + 
+  theme_bw(base_size = 18) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +ylab("ASVs")
+
+
+ggsave(plot= spec_acc_ls, 
+       filename = here("analysis","figures","Sup_Fig_lembeh_strait.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+
+##### Batam Bintam Site
+```{r}
+t <- seq(1, 10, by=1)
+out.inc_site_bb <- iNEXT(species_incidence_site_1$`Batam Bintam`, q=0, datatype="incidence_freq", size=t)
+
+out.inc_site_bb$iNextEst
+
+namers <- names(out.inc_site_bb$iNextEst)
+
+out.inc_site_bb$iNextEst %>% tibble(Data=.) -> holder_4
+ holder_4$Site <-  namers
+ unnest_longer(holder_4, col=Data) -> bb_long
+ 
+ bb_long_df <- cbind(bb_long$Data, bb_long$Site)
+ 
+ bb_long_df %>% 
+ write.csv( file="Batam Bintam_site_samples.csv", quote = TRUE) 
+
+
+
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+spec_acc_bb <- ggiNEXT(out.inc_site_bb, type=1, color.var="site") + 
+  theme_bw(base_size = 18) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +ylab("ASVs")
+
+ggsave(plot= spec_acc_bb, 
+       filename = here("analysis","figures","Sup_Fig_batam_bintam.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+##### Derawan Site
+```{r}
+t <- seq(1, 10, by=1)
+out.inc_site_dwn <- iNEXT(species_incidence_site_1$Derawan, q=0, datatype="incidence_freq", size=t)
+
+out.inc_site_dwn$iNextEst
+namers <- names(out.inc_site_dwn$iNextEst)
+
+out.inc_site_dwn$iNextEst %>% tibble(Data=.) -> holder_4
+ holder_4$Site <-  namers
+ unnest_longer(holder_4, col=Data) -> dwn_long
+ 
+ dwn_long_df <- cbind(dwn_long$Data, dwn_long$Site)
+ 
+ dwn_long_df  %>% write.csv( file="Derawan_site_samples.csv", quote = TRUE) 
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+spec_acc_dwn <- ggiNEXT(out.inc_site_dwn, type=1, color.var="site") + 
+  theme_bw(base_size = 18) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +ylab("ASVs")
+
+ggsave(plot= spec_acc_dwn, 
+       filename = here("analysis","figures","Sup_Fig_derawan.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+##### Aceh Site
+```{r}
+t <- seq(1, 10, by=1)
+out.inc_site_aceh <- iNEXT(species_incidence_site_1$Aceh, q=0, datatype="incidence_freq", size=t)
+
+out.inc_site_aceh$iNextEst
+
+namers <- names(out.inc_site_aceh$iNextEst)
+
+out.inc_site_aceh$iNextEst %>% tibble(Data=.) -> holder_4
+ holder_4$Site <-  namers
+ unnest_longer(holder_4, col=Data) -> aceh_long
+ 
+ aceh_long_df <- cbind(aceh_long$Data, aceh_long$Site)
+ 
+ aceh_long_df   %>%
+   write.csv( file="Aceh_site_samples.csv", quote = TRUE) 
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+spec_acc_aceh <- ggiNEXT(out.inc_site_aceh, type=1, color.var="site") + 
+  theme_bw(base_size = 18) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +ylab("ASVs")
+
+ggsave(plot= spec_acc_aceh, 
+       filename = here("analysis","figures","Sup_Fig_aceh.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+##### Ternate Site
+```{r}
+t <- seq(1, 10, by=1)
+out.inc_site_tnt <- iNEXT(species_incidence_site_1$Ternate, q=0, datatype="incidence_freq", size=t)
+
+out.inc_site_tnt$iNextEst
+namers <- names(out.inc_site_tnt$iNextEst)
+
+out.inc_site_tnt$iNextEst %>% tibble(Data=.) -> holder_4
+ holder_4$Site <-  namers
+ unnest_longer(holder_4, col=Data) -> tnt_long
+ 
+ tnt_long_df <- cbind(tnt_long$Data, tnt_long$Site)
+ 
+ tnt_long_df  %>% write.csv( file="Ternate_site_samples.csv", quote = TRUE) 
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+spec_acc_tnt <- ggiNEXT(out.inc_site_tnt, type=1, color.var="site") + 
+  theme_bw(base_size = 18) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +ylab("ASVs")
+
+
+ggsave(plot= spec_acc_tnt, 
+       filename = here("analysis","figures","Sup_Fig_ternate.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+##### Wakatobi Site
+```{r}
+t <- seq(1, 10, by=1)
+out.inc_site_wktb <- iNEXT(species_incidence_site_1$Wakatobi, q=0, datatype="incidence_freq", size=t)
+
+out.inc_site_wktb$iNextEst
+
+namers <- names(out.inc_site_wktb$iNextEst)
+
+out.inc_site_wktb$iNextEst %>% tibble(Data=.) -> holder_4
+ holder_4$Site <-  namers
+ unnest_longer(holder_4, col=Data) -> wktb_long
+ 
+ wktb_long_df <- cbind(wktb_long$Data, wktb_long$Site)
+ 
+ wktb_long_df %>% write.csv( file="Wakatobi_site_samples.csv", quote = TRUE) 
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+spec_acc_wktb <- ggiNEXT(out.inc_site_wktb, type=1, color.var="site") + 
+  theme_bw(base_size = 18) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +ylab("ASVs")
+
+ggsave(plot= spec_acc_wktb, 
+       filename = here("analysis","figures","Sup_Fig_wakatobi.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+#### MPA
+```{r}
+iNext_subset(physeq_asv_mpa_reads,"Site") -> species_incidence_site
+
+sample_metadata_mpa <- as.tibble(sample_data(physeq_asv_mpa_reads))
+
+species_incidence_subset(species_incidence_site,sample_metadata_mpa,"Region","Site") -> species_incidence_site_1_mpa
+
+```
+
+```{r}
+t <- seq(1, 10, by=1)
+out.inc_site_mpa <- iNEXT(species_incidence_site_1_mpa$`Southern California`, q=0, datatype="incidence_freq", size=t)
+
+out.inc_site_mpa$iNextEst
+namers <- names(out.inc_site_mpa$iNextEst)
+
+out.inc_site_mpa$iNextEst %>% tibble(Data=.) -> holder_4
+ holder_4$Site <-  namers
+ unnest_longer(holder_4, col=Data) -> mpa_long
+ 
+ mpa_long_df <- cbind(mpa_long$Data, mpa_long$Site)
+ 
+ mpa_long_df %>% write.csv( file="Socal_site_samples.csv", quote = TRUE)
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+spec_acc_mpa <- ggiNEXT(out.inc_site_mpa, type=1, color.var="site") + 
+  theme_bw(base_size = 18) +   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank()) + xlab("Samples") +ylab("ASVs")
+
+ggsave(plot= spec_acc_mpa, 
+       filename = here("analysis","figures","Sup_Fig_mpa.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+### Site Combined Accumulation
+```{r}
+
+iNext_subset(physeq_asv_site,"Region") -> species_incidence_region
+iNext_subset(physeq_asv_mpa_reads_site,"Region") -> species_incidence_region_mpa
+
+species_incidence_region$`Southern California` <- species_incidence_region_mpa$`Southern California`
+  
+#Convert to iNEXT format
+t <- seq(1, 15, by=1)
+out.inc_site <- iNEXT(species_incidence_region, q=0, datatype="incidence_freq", size=t)
+
+out.inc_site$iNextEst
+
+
+out.inc_site$iNextEst$`Raja Ampat` %>% write.csv( file="Raja Ampat_site.csv", quote = TRUE) 
+out.inc_site$iNextEst$`Lembeh Strait` %>% write.csv( file="Lembeh Strait_site.csv", quote = TRUE)
+out.inc_site$iNextEst$`Batam Bintam` %>% write.csv( file="Batam Bintam_site.csv", quote = TRUE)
+out.inc_site$iNextEst$Derawan %>% write.csv( file="Derawan_site.csv", quote = TRUE)
+
+out.inc_site$iNextEst$Aceh %>% write.csv( file="Aceh_site.csv", quote = TRUE) 
+out.inc_site$iNextEst$Ternate %>% write.csv( file="Ternate_site.csv", quote = TRUE) 
+out.inc_site$iNextEst$Wakatobi %>% write.csv( file="Wakatobi_site.csv", quote = TRUE)
+
+out.inc_site$iNextEst$`Southern California` %>% write.csv( file="Socal_site.csv", quote = TRUE)
+```
+
+
+```{r}
+#Sample‐size‐based R/E curves
+fig_2b <- ggiNEXT(out.inc_site, type=1, color.var="site") + 
+  theme_bw(base_size = 18) + scale_fill_manual(values=col.mor8_diff_2) +scale_color_manual(values=col.mor8_diff_2) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                                                                    panel.background = element_blank(), legend.position = "none") + xlab("Sites") +ylab("ASVs") +guides(fill=guide_legend(title="Region"),color=guide_legend(title="Region"), shape=guide_legend(title="Region"))+ scale_shape_manual(values=c(7, 10, 17,13,16,8,18,5,15))
+
+```
+
+## Figure 2
+```{r}
+
+fig_2_complete <- ggarrange(ggarrange(fig_2a, fig_2b, nrow = 2, labels = c("A", "B")),
+          fig_2c,
+          ncol = 2, 
+          labels = c("","C"))  
+
+ggsave(plot= fig_2_complete, 
+       filename = here("analysis","figures","Figure_2_combined.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+```
+
+
+# Betadiversity
+
+##ASVS 
+### Samples
+#### PERMANOVA
+```{r}
+
+sampledf <- data.frame(sample_data(physeq_asv_eIDX))
+
+carnivore_rel_abun<- vegan_otu(physeq_asv_eIDX)
+
+#Bray curtis dissimilarity matrix
+d_carn <- vegdist(carnivore_rel_abun, method="jaccard", binary=TRUE) 
+
+#Permanova
+adonis(carnivore_rel_abun~ sampledf$Region+sampledf$Site ,method="jaccard", binary=TRUE)
+
+```
+We find that there is a signficant difference in fish communities across Regions and sites explaining 50% of the observed variance in samples.
+
+#### BETADISPER
+
+```{r}
+groups <- factor(getElement(sampledf, "Region"))
+#Homogeneity of dispersions test
+mod <- betadisper(d_carn, groups)
+
+anova(mod)
+broom::tidy(TukeyHSD(betadisper(d_carn, getElement(sampledf, "Region")))) %>% View()
+broom::tidy(TukeyHSD(betadisper(d_carn, getElement(sampledf, "Region")))) %>% write.csv( file="betadisper.csv", quote = TRUE)
+
+```
+
+There are signficant differences in the dispersion between Regions. In particular, Batam Bintam was signficantly lower dispersion between samples that all other regions.
+
+```{r}
+groups <- factor(getElement(sampledf, "Site"))
+#Homogeneity of dispersions test
+mod <- betadisper(d_carn, groups)
+
+anova(mod)
+broom::tidy(TukeyHSD(betadisper(d_carn, getElement(sampledf, "Site")))) %>% View()
+
+```
+
+There are signficant differences in the dispersion between sites as well. In particular, Batam Bintam was signficantly lower dispersion between samples that all other regions.
+
+##### NMDS Plots
+
+```{r}
+# DCA ordination
+ord <- ordinate(physeq_asv_eIDX, method = "NMDS", distance = d_carn)
+
+fig3 <- plot_ordination(physeq_asv_eIDX, ord, color = "Region", shape="Region") +
+  geom_point(size=5) +
+  theme_bw() +
+   ggtitle(paste("NMDS Jaccard-Binary Dissimilarity Method - Sample Level")) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + scale_shape_manual(values=c(7, 10, 17,13,16,8,18,5,15)) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20))  + scale_fill_manual(values=col.mor8) +  scale_colour_manual(values=col.mor8)
+
+ggsave(plot= fig3, 
+       filename = here("analysis","figures","Figure_3.eps"),
+       width=12,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+
+```
+
+## ASVS
+### Sites
+#### PERMANOVA
+```{r}
+
+sampledf_site <- data.frame(sample_data(physeq_asv_site))
+
+carnivore_rel_abun_site<- vegan_otu(physeq_asv_site)
+
+#Bray curtis dissimilarity matrix
+d_carn_site <- vegdist(carnivore_rel_abun_site, method="jaccard", binary=TRUE) 
+
+#Permanova
+adonis(carnivore_rel_abun_site~ sampledf_site$Region ,method="jaccard", binary=TRUE)
+
+```
+We find that there is a signficant difference in fish communities across Regions and sites explaining 50% of the observed variance in samples.
+
+#### BETADISPER
+
+```{r}
+groups <- factor(getElement(sampledf_site, "Region"))
+#Homogeneity of dispersions test
+mod <- betadisper(d_carn_site, groups)
+
+anova(mod)
+broom::tidy(TukeyHSD(betadisper(d_carn_site, getElement(sampledf_site, "Region")))) %>% View()
+
+```
+
+There are signficant differences in the dispersion between Regions. In particular, Batam Bintam was signficantly lower dispersion between samples that all other regions.
+
+There are signficant differences in the dispersion between sites as well. In particular, Batam Bintam was signficantly lower dispersion between samples that all other regions.
+
+##### DCA Plots
+
+```{r}
+# DCA ordination
+ord_site <- ordinate(physeq_asv_site, method = "NMDS", distance = d_carn_site)
+
+S_dca <- plot_ordination(physeq_asv_site, ord_site, color = "Region", shape="Region") +
+  geom_point(size=5) +
+  theme_bw() +
+   ggtitle(paste("DCA Jaccard-Binary Dissimilarity Method - Site Level")) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + scale_shape_manual(values=c(7, 10, 17,13,16,8,18,5,15)) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20))  + scale_fill_manual(values=col.mor8) +  scale_colour_manual(values=col.mor8)
+
+ggsave(plot= S_dca, 
+       filename = here("analysis","figures","Sup_fig_nmds.eps"),
+       width=12,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+
+```
+
+##Species
+#### PERMANOVA
+```{r}
+
+physeq_obj.step5_eIDX = filter_taxa(physeq_obj.step5_eIDX, function(x) max(x) > 0, TRUE)
+physeq_obj.step5_eIDX = prune_samples(sample_sums(physeq_obj.step5_eIDX)>0, physeq_obj.step5_eIDX)
+
+sampledf <- data.frame(sample_data(physeq_obj.step5_eIDX))
+
+carnivore_rel_abun<- vegan_otu(physeq_obj.step5_eIDX)
+#Bray curtis dissimilarity matrix
+d_carn <- vegdist(carnivore_rel_abun, method="jaccard", binary=TRUE) 
+
+#Permanova
+adonis(carnivore_rel_abun~ sampledf$Region+sampledf$Site ,method="jaccard", binary=TRUE)
+
+```
+
+#### BETADISPER
+```{r}
+groups <- factor(getElement(sampledf, "Site"))
+#Homogeneity of dispersions test
+mod <- betadisper(d_carn, groups)
+
+anova(mod)
+broom::tidy(TukeyHSD(betadisper(d_carn, getElement(sampledf, "Site"))))
+
+```
+```{r}
+groups <- factor(getElement(sampledf, "Region"))
+#Homogeneity of dispersions test
+mod <- betadisper(d_carn, groups)
+
+anova(mod)
+broom::tidy(TukeyHSD(betadisper(d_carn, getElement(sampledf, "Region"))))
+
+```
+
+##### NMDS Plots
+
+```{r}
+# NMDS ordination
+ord <- ordinate(physeq_obj.step5_eIDX, method = "NMDS", distance = d_carn)
+
+
+plot_ordination(physeq_obj.step5_eIDX, ord, color = "Region", shape="Region") +
+  geom_point(size=5) +
+  theme_bw() +
+  #geom_text(aes(x=NMDS1,y=NMDS2,label=Replicate),alpha=0.5)+
+   ggtitle(paste("NMDS Jaccard-Binary Dissimilarity Method - All Species")) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + scale_shape_manual(values=c(7, 10, 17,13,16,8,18,5,15)) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20))  + scale_fill_manual(values=col.mor8) +  scale_colour_manual(values=col.mor8)
+
+
+```
+
+# Zeta Diversity
+
+
+```{r}
+library(zetadiv)
+```
+
+### ASVs Sites
+```{r}
+#Read in Read Data
+Data_asvs_sites <- zjg_asvs_reads_sites %>%  ungroup()
+
+#Get OTU names
+taxa_asvs_sites <- Data_asvs_sites$seq_number
+
+#Make a presence/absence matrix
+Data_asvs_sites %>% dplyr::select(-sum.taxonomy,-seq_number,-number) %>% 
+mutate_all(., ~replace(., . > 1, 1)) -> DataPA_asvs_sites
+DataPA_asvs_sites <- as.data.frame(t(DataPA_asvs_sites))
+colnames(DataPA_asvs_sites) <- taxa_asvs_sites
+
+# LATLON Data
+site_metadata %>% 
+  filter(., Site %in% rownames(DataPA_asvs_sites)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_sites
+  
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_site <- Zeta.decline.ex(DataPA_asvs_sites,orders=1:39,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_site, file=here("analysis","zeta","zetaDecay.ex_asvs_site"))
+
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_sites <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_sites[[i-1]] <-  Zeta.ddecay(latlon_sites, DataPA_asvs_sites,order=i,distance.type="ortho",reg.type="gam")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_sites, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_sites"))
+
+
+```
+
+#### Raja Ampat
+```{r}
+site_metadata %>% 
+  filter(., Region=="Raja Ampat") %>% 
+  dplyr::select(Site) -> raja_samples
+
+#Make a presence/absence matrix
+DataPA_asvs_sites[raja_samples$Site, ] -> raja_DataPA_asvs
+
+
+# LATLON Data
+site_metadata %>% 
+  filter(., Site %in% rownames(raja_DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_raja
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_raja_site <- Zeta.decline.ex(raja_DataPA_asvs,orders=1:10,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_raja_site, file=here("analysis","zeta","zetaDecay.ex_asvs_raja_site.RDS"))
+
+zetaDecay.ex_asvs_raja_site <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_raja_site.RDS"))
+
+zetaDecay.ex_asvs_raja_site[5]$ratio <- c(zetaDecay.ex_asvs_raja_site[5]$ratio,NA)
+zetaDecay.ex_asvs_raja_site[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Raja Ampat",
+         Level = "Sites") -> zeta_raja_site
+
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_raja_sites <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_raja_sites[[i-1]] <-  Zeta.ddecay(latlon_raja, raja_DataPA_asvs,order=i,distance.type="ortho",reg.type="gam")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_raja_sites, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_raja_sites"))
+
+```
+
+#### Batam Bintam
+```{r}
+site_metadata %>% 
+  filter(., Region=="Batam Bintam") %>% 
+  dplyr::select(Site) -> bb_samples
+
+#Make a presence/absence matrix
+DataPA_asvs_sites[bb_samples$Site, ] -> bb_DataPA_asvs_sites
+
+
+# LATLON Data
+site_metadata %>% 
+  filter(., Site %in% rownames(bb_DataPA_asvs_sites)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_bb
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_bb_sites <- Zeta.decline.ex(bb_DataPA_asvs_sites,orders=1:3,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_bb_sites, file=here("analysis","zeta","zetaDecay.ex_asvs_bb_sites"))
+
+zetaDecay.ex_asvs_bb_sites <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_bb_sites"))
+
+zetaDecay.ex_asvs_bb_sites[5]$ratio <- c(zetaDecay.ex_asvs_bb_sites[5]$ratio,NA)
+zetaDecay.ex_asvs_bb_sites[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Batam Bintam",
+         Level = "Sites") -> zeta_bb_site
+
+
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_bb_sites <- list()
+i=2
+zeta.ddecay.asv.gam.N_bb_sites[[i-1]] <-  Zeta.ddecay(latlon_bb, bb_DataPA_asvs_sites,order=i,distance.type="ortho",reg.type="glm")
+
+
+saveRDS(zeta.ddecay.asv.gam.N_bb_sites, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_bb_sites"))
+
+```
+
+#### Lembeh Strait
+```{r}
+site_metadata %>% 
+  filter(., Region=="Lembeh Strait") %>% 
+  dplyr::select(Site) -> ls_samples
+
+#Make a presence/absence matrix
+DataPA_asvs_sites[ls_samples$Site, ] -> ls_DataPA_asvs_sites
+
+
+# LATLON Data
+site_metadata %>% 
+  filter(., Site %in% rownames(ls_DataPA_asvs_sites)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_ls
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_ls_sites <- Zeta.decline.ex(ls_DataPA_asvs_sites,orders=1:11,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_ls_sites, file=here("analysis","zeta","zetaDecay.ex_asvs_ls_sites"))
+
+zetaDecay.ex_asvs_ls_sites <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_ls_sites"))
+
+zetaDecay.ex_asvs_ls_sites[5]$ratio <- c(zetaDecay.ex_asvs_ls_sites[5]$ratio,NA)
+zetaDecay.ex_asvs_ls_sites[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Lembeh Strait",
+         Level = "Sites") -> zeta_ls_site
+
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_ls_sites <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_ls_sites[[i-1]] <-  Zeta.ddecay(latlon_ls, ls_DataPA_asvs_sites,order=i,distance.type="ortho",reg.type="gam")
+
+}
+saveRDS(zeta.ddecay.asv.gam.N_ls_sites, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_ls_sites"))
+
+```
+
+#### DERAWAN
+```{r}
+site_metadata %>% 
+  filter(., Region=="Derawan") %>% 
+  dplyr::select(Site) -> dwn_samples
+
+#Make a presence/absence matrix
+DataPA_asvs_sites[dwn_samples$Site, ] -> dwn_DataPA_asvs_sites
+
+
+# LATLON Data
+site_metadata %>% 
+  filter(., Site %in% rownames(dwn_DataPA_asvs_sites)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_dwn
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_dwn_sites <- Zeta.decline.ex(dwn_DataPA_asvs_sites,orders=1:4,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_dwn_sites, file=here("analysis","zeta","zetaDecay.ex_asvs_dwn_sites"))
+
+zetaDecay.ex_asvs_dwn_sites <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_dwn_sites"))
+
+zetaDecay.ex_asvs_dwn_sites[5]$ratio <- c(zetaDecay.ex_asvs_dwn_sites[5]$ratio,NA)
+zetaDecay.ex_asvs_dwn_sites[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Derawan",
+         Level = "Sites") -> zeta_derawan_site
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_dwn_sites <- list()
+for(i in 2:3){
+ zeta.ddecay.asv.gam.N_dwn_sites[[i-1]] <-  Zeta.ddecay(latlon_dwn, dwn_DataPA_asvs_sites,order=i,distance.type="ortho",reg.type="glm")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_dwn_sites, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_dwn_sites"))
+
+```
+
+#### Aceh
+```{r}
+site_metadata %>% 
+  filter(., Region=="Aceh") %>% 
+  dplyr::select(Site) -> aceh_samples
+
+#Make a presence/absence matrix
+DataPA_asvs_sites[aceh_samples$Site, ] -> aceh_DataPA_asvs_sites
+
+
+# LATLON Data
+site_metadata %>% 
+  filter(., Site %in% rownames(aceh_DataPA_asvs_sites)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_aceh
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_aceh_sites <- Zeta.decline.ex(aceh_DataPA_asvs_sites,orders=1:5,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_aceh_sites, file=here("analysis","zeta","zetaDecay.ex_asvs_aceh_sites"))
+
+zetaDecay.ex_asvs_aceh_sites <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_aceh_sites"))
+
+zetaDecay.ex_asvs_aceh_sites[5]$ratio <- c(zetaDecay.ex_asvs_aceh_sites[5]$ratio,NA)
+zetaDecay.ex_asvs_aceh_sites[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Aceh",
+         Level = "Sites") -> zeta_aceh_site
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_aceh_sites <- list()
+for(i in 2:3){
+ zeta.ddecay.asv.gam.N_aceh_sites[[i-1]] <-  Zeta.ddecay(latlon_aceh, aceh_DataPA_asvs_sites,order=i,distance.type="ortho",reg.type="gam")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_aceh_sites, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_aceh_sites"))
+
+
+```
+
+#### TERNATE
+```{r}
+site_metadata %>% 
+  filter(., Region=="Ternate") %>% 
+  dplyr::select(Site) -> tnt_samples
+
+#Make a presence/absence matrix
+DataPA_asvs_sites[tnt_samples$Site, ] -> tnt_DataPA_asvs_sites
+
+# LATLON Data
+site_metadata %>% 
+  filter(., Site %in% rownames(tnt_DataPA_asvs_sites)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_tnt
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_tnt_sites <- Zeta.decline.ex(tnt_DataPA_asvs_sites,orders=1:3,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_tnt_sites, file=here("analysis","zeta","zetaDecay.ex_asvs_tnt_sites"))
+
+zetaDecay.ex_asvs_tnt_sites <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_tnt_sites"))
+
+zetaDecay.ex_asvs_tnt_sites[5]$ratio <- c(zetaDecay.ex_asvs_tnt_sites[5]$ratio,NA)
+zetaDecay.ex_asvs_tnt_sites[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Ternate",
+         Level = "Sites") -> zeta_tnt_site
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_tnt_sites <- list()
+for(i in 2){
+ zeta.ddecay.asv.gam.N_tnt_sites[[i-1]] <-  Zeta.ddecay(latlon_tnt, tnt_DataPA_asvs_sites,order=i,distance.type="ortho",reg.type="glm")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_tnt_sites, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_tnt_sites"))
+
+
+```
+
+#### Wakatobi
+```{r}
+
+site_metadata %>% 
+  filter(., Region=="Wakatobi") %>% 
+  dplyr::select(Site) -> wktb_samples
+
+#Make a presence/absence matrix
+DataPA_asvs_sites[wktb_samples$Site, ] -> wktb_DataPA_asvs_sites
+
+
+# LATLON Data
+site_metadata %>% 
+  filter(., Site %in% rownames(wktb_DataPA_asvs_sites)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_wktb
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_wktb_sites <- Zeta.decline.ex(wktb_DataPA_asvs_sites,orders=1:3,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_wktb_sites, file=here("analysis","zeta","zetaDecay.ex_asvs_wktb_sites"))
+
+zetaDecay.ex_asvs_wktb_sites <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_wktb_sites"))
+
+zetaDecay.ex_asvs_wktb_sites[5]$ratio <- c(zetaDecay.ex_asvs_wktb_sites[5]$ratio,NA)
+zetaDecay.ex_asvs_wktb_sites[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Wakatobi",
+         Level = "Sites") -> zeta_wakatobi_site
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_wktb_sites <- list()
+for(i in 2){
+ zeta.ddecay.asv.gam.N_wktb_sites[[i-1]] <-  Zeta.ddecay(latlon_wktb, wktb_DataPA_asvs_sites,order=i,distance.type="ortho",reg.type="glm")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_wktb_sites, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_wktb_sites"))
+
+```
+
+### Zeta Decay Figure
+
+```{r}
+zetaDecay.ex_asvs_dwn_sites[1:4] %>% as.tibble() %>% mutate(Region = "Derawan")-> zdx_dwn_tib
+zetaDecay.ex_asvs_aceh_sites[1:4] %>% as.tibble() %>% mutate(Region = "Aceh")-> zdx_aceh_tib
+zetaDecay.ex_asvs_bb_sites[1:4] %>% as.tibble() %>% mutate(Region = "Batam Bintam")-> zdx_bb_tib
+zetaDecay.ex_asvs_ls_sites[1:4] %>% as.tibble() %>% mutate(Region = "Lembeh Strait")-> zdx_ls_tib
+zetaDecay.ex_asvs_raja_site[1:4] %>% as.tibble() %>% mutate(Region = "Raja Ampat")-> zdx_raja_tib
+zetaDecay.ex_asvs_tnt_sites[1:4] %>% as.tibble() %>% mutate(Region = "Ternate")-> zdx_tnt_tib
+zetaDecay.ex_asvs_wktb_sites[1:4] %>% as.tibble() %>% mutate(Region = "Wakatobi")-> zdx_wktb_tib
+
+bind_rows(zdx_dwn_tib,zdx_aceh_tib,zdx_bb_tib,zdx_ls_tib,zdx_raja_tib,zdx_tnt_tib,zdx_wktb_tib) -> zdx_regions
+
+
+zdv_decay_sites <- zdx_regions %>% 
+ggplot(aes(x= zeta.order, y= zeta.val, group=Region,color=Region, fill=Region)) +geom_point() +geom_line() + geom_ribbon(aes(ymin = zeta.val - zeta.val.sd, ymax = zeta.val + zeta.val.sd),alpha =0.1, colour = NA) + theme(axis.line = element_line(colour = "black"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20), legend.position = "NULL")  + scale_fill_manual(values=col.mor8) +  scale_colour_manual(values=col.mor8) +xlim(0,11) +ylab("Zeta Diversity") + xlab("Zeta Order - Sites") +ylim(0,100)
+```
+### Species Retention Figure
+
+```{r}
+
+zetaDecay.ex_asvs_dwn_sites[5] %>% as.tibble() %>% mutate(Region = "Derawan",zeta.order = 1:n()) -> ret_dwn_tib
+zetaDecay.ex_asvs_aceh_sites[5] %>% as.tibble() %>% mutate(Region = "Aceh",zeta.order = 1:n())-> ret_aceh_tib
+zetaDecay.ex_asvs_bb_sites[5] %>% as.tibble() %>% mutate(Region = "Batam Bintam",zeta.order = 1:n())-> ret_bb_tib
+zetaDecay.ex_asvs_ls_sites[5] %>% as.tibble() %>% mutate(Region = "Lembeh Strait",zeta.order = 1:n())-> ret_ls_tib
+zetaDecay.ex_asvs_raja_site[5] %>% as.tibble() %>% mutate(Region = "Raja Ampat",zeta.order = 1:n())-> ret_raja_tib
+zetaDecay.ex_asvs_tnt_sites[5] %>% as.tibble() %>% mutate(Region = "Ternate",zeta.order = 1:n())-> ret_tnt_tib
+zetaDecay.ex_asvs_wktb_sites[5] %>% as.tibble() %>% mutate(Region = "Wakatobi",zeta.order = 1:n())-> ret_wktb_tib
+
+bind_rows(ret_dwn_tib,ret_aceh_tib,ret_bb_tib,ret_ls_tib,ret_raja_tib,ret_tnt_tib,ret_wktb_tib) -> zdx_regions_ret_sites
+
+spec_ret_sites <- zdx_regions_ret_sites %>% 
+ggplot(aes(x= zeta.order, y= ratio, group=Region,color=Region)) +geom_point() +geom_line() +
+  theme(axis.line = element_line(color="black"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20), legend.position = "NULL")  + scale_fill_manual(values=col.mor8) +  scale_colour_manual(values=col.mor8)  +ylab("Zeta Ratio") + xlab("Zeta Order - Sites") +ylim(0,1) + scale_x_continuous(breaks=c(0,3, 6,10), limits=c(0, 10))
+
+
+```
+
+## ASVs Samples
+```{r}
+#Read in Read Data
+Data_asvs <- zjg_asv_reads
+
+#Get OTU names
+taxa_asvs <- Data_asvs$seq_number
+
+#Make a presence/absence matrix
+Data_asvs %>% dplyr::select(-sum.taxonomy,-seq_number) %>% 
+mutate_all(., ~replace(., . > 1, 1)) -> DataPA_asvs
+DataPA_asvs <- as.data.frame(t(DataPA_asvs))
+colnames(DataPA_asvs) <- taxa_asvs
+
+# LATLON Data
+metadata2 %>% 
+  filter(., New_name %in% rownames(DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon
+  
+#Calculate zeta diversity decay parameters and plots.
+  zetaDecay.ex_asvs <- Zeta.decline.ex(DataPA_asvs,orders=1:60,plot=TRUE)
+
+  
+saveRDS(zetaDecay.ex_asvs, file=here("analysis","zeta","zetaDecay.ex_asvs"))
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N[[i-1]] <-  Zeta.ddecay(latlon, DataPA_asvs,order=i,distance.type="ortho",reg.type="gam")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N, file=here("analysis","zeta","zeta.ddecay.asv.gam.N"))
+
+
+```
+#### Raja Ampat
+```{r}
+metadata2 %>% 
+  filter(., INDO_REGION=="RAJA_AMPAT") %>% 
+  dplyr::select(New_name) -> raja_samples
+
+#Make a presence/absence matrix
+DataPA_asvs[raja_samples$New_name, ] %>%  na.omit()-> raja_DataPA_asvs
+
+# LATLON Data
+metadata2 %>% 
+  filter(., New_name %in% rownames(raja_DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_raja
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_raja <- Zeta.decline.ex(raja_DataPA_asvs,orders=1:29,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_raja, file=here("analysis","zeta","zetaDecay.ex_asvs_raja.RDS"))
+
+zetaDecay.ex_asvs_raja <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_raja.RDS"))
+
+zetaDecay.ex_asvs_raja[5]$ratio <- c(zetaDecay.ex_asvs_raja[5]$ratio,NA)
+zetaDecay.ex_asvs_raja[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Raja Ampat",
+         Level = "Samples") -> zeta_raja_sample
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_raja <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_raja[[i-1]] <-  Zeta.ddecay(latlon_raja, raja_DataPA_asvs,order=i,distance.type="ortho",reg.type="gam")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_raja, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_raja"))
+
+```
+
+#### Batam Bintam
+```{r}
+metadata2 %>% 
+  filter(., INDO_REGION=="BATAM_BINTAN") %>% 
+  dplyr::select(New_name) -> bb_samples
+
+#Make a presence/absence matrix
+DataPA_asvs[bb_samples$New_name, ] -> bb_DataPA_asvs
+
+
+# LATLON Data
+metadata2 %>% 
+  filter(., New_name %in% rownames(bb_DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_bb
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_bb <- Zeta.decline.ex(bb_DataPA_asvs,orders=1:10,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_bb, file=here("analysis","zeta","zetaDecay.ex_asvs_bb"))
+
+zetaDecay.ex_asvs_bb <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_bb"))
+
+zetaDecay.ex_asvs_bb[5]$ratio <- c(zetaDecay.ex_asvs_bb[5]$ratio,NA)
+zetaDecay.ex_asvs_bb[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Batam Bintam",
+         Level = "Samples") -> zeta_bb_sample
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_bb <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_bb[[i-1]] <-  Zeta.ddecay(latlon_bb, bb_DataPA_asvs,order=i,distance.type="ortho",reg.type="glm")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_bb, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_bb"))
+
+```
+
+#### Lembeh Strait
+```{r}
+metadata2 %>% 
+  filter(., INDO_REGION=="LEMBEH_STRAIT") %>% 
+  dplyr::select(New_name) -> ls_samples
+
+#Make a presence/absence matrix
+DataPA_asvs[ls_samples$New_name, ] %>%  na.omit()-> ls_DataPA_asvs
+
+
+# LATLON Data
+metadata2 %>% 
+  filter(., New_name %in% rownames(ls_DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_ls
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_ls <- Zeta.decline.ex(ls_DataPA_asvs,orders=1:31,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_ls, file=here("analysis","zeta","zetaDecay.ex_asvs_ls"))
+
+zetaDecay.ex_asvs_ls <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_ls"))
+
+zetaDecay.ex_asvs_ls[5]$ratio <- c(zetaDecay.ex_asvs_ls[5]$ratio,NA)
+zetaDecay.ex_asvs_ls[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Lembeh Strait",
+         Level = "Samples") -> zeta_ls_sample
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_ls <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_ls[[i-1]] <-  Zeta.ddecay(latlon_ls, ls_DataPA_asvs,order=i,distance.type="ortho",reg.type="gam")
+
+}
+saveRDS(zeta.ddecay.asv.gam.N_ls, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_ls"))
+
+```
+
+#### DERAWAN
+```{r}
+metadata2 %>% 
+  filter(., INDO_REGION=="DERAWAN") %>% 
+  dplyr::select(New_name) %>% 
+  filter(., New_name != "SP_1_star")-> dwn_samples
+
+#Make a presence/absence matrix
+DataPA_asvs[dwn_samples$New_name, ] -> dwn_DataPA_asvs
+dwn_DataPA_asvs %>%  View()
+
+# LATLON Data
+metadata2 %>% 
+  filter(., New_name %in% rownames(dwn_DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_dwn
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_dwn <- Zeta.decline.ex(dwn_DataPA_asvs,orders=1:12,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_dwn, file=here("analysis","zeta","zetaDecay.ex_asvs_dwn"))
+
+zetaDecay.ex_asvs_dwn <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_dwn"))
+
+zetaDecay.ex_asvs_dwn[5]$ratio <- c(zetaDecay.ex_asvs_dwn[5]$ratio,NA)
+zetaDecay.ex_asvs_dwn[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Derawan",
+         Level = "Samples") -> zeta_derawan_sample
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_dwn <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_ls[[i-1]] <-  Zeta.ddecay(latlon_dwn, dwn_DataPA_asvs,order=i,distance.type="ortho",reg.type="glm")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_dwn, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_dwn"))
+
+```
+
+#### Aceh
+```{r}
+metadata2 %>% 
+  filter(., INDO_REGION=="ACEH") %>% 
+  dplyr::select(New_name) -> aceh_samples
+
+#Make a presence/absence matrix
+DataPA_asvs[aceh_samples$New_name, ] -> aceh_DataPA_asvs
+
+
+# LATLON Data
+metadata2 %>% 
+  filter(., New_name %in% rownames(aceh_DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_aceh
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_aceh <- Zeta.decline.ex(aceh_DataPA_asvs,orders=1:15,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_aceh, file=here("analysis","zeta","zetaDecay.ex_asvs_aceh"))
+
+zetaDecay.ex_asvs_aceh <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_aceh"))
+
+zetaDecay.ex_asvs_aceh[5]$ratio <- c(zetaDecay.ex_asvs_aceh[5]$ratio,NA)
+zetaDecay.ex_asvs_aceh[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Aceh",
+         Level = "Samples") -> zeta_aceh_sample
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_aceh <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_aceh[[i-1]] <-  Zeta.ddecay(latlon_aceh, aceh_DataPA_asvs,order=i,distance.type="ortho",reg.type="gam")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_aceh, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_aceh"))
+
+
+```
+
+#### TERNATE
+```{r}
+metadata2 %>% 
+  filter(., INDO_REGION=="TERNATE") %>% 
+  dplyr::select(New_name) -> tnt_samples
+
+tnt_samples[tnt_samples$New_name !="TTE_3_2",]-> tnt_samples
+#Make a presence/absence matrix
+DataPA_asvs[tnt_samples, ]  %>% na.omit() -> tnt_DataPA_asvs
+
+# LATLON Data
+metadata2 %>% 
+  filter(., New_name %in% rownames(tnt_DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_tnt
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_tnt <- Zeta.decline.ex(tnt_DataPA_asvs,orders=1:7,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_tnt, file=here("analysis","zeta","zetaDecay.ex_asvs_tnt"))
+
+zetaDecay.ex_asvs_tnt <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_tnt"))
+
+zetaDecay.ex_asvs_tnt[5]$ratio <- c(zetaDecay.ex_asvs_tnt[5]$ratio,NA)
+zetaDecay.ex_asvs_tnt[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Ternate",
+         Level = "Samples") -> zeta_tnt_sample
+```
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_tnt <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_tnt[[i-1]] <-  Zeta.ddecay(latlon_tnt, tnt_DataPA_asvs,order=i,distance.type="ortho",reg.type="glm")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_tnt, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_tnt"))
+
+
+```
+
+#### Wakatobi
+```{r}
+
+metadata2 %>% 
+  filter(., INDO_REGION=="WAKATOBI") %>% 
+  dplyr::select(New_name) -> wktb_samples
+
+#Make a presence/absence matrix
+DataPA_asvs[wktb_samples$New_name, ] -> wktb_DataPA_asvs
+
+
+# LATLON Data
+metadata2 %>% 
+  filter(., New_name %in% rownames(wktb_DataPA_asvs)) %>% 
+  dplyr::select(Lat_dec ,Long_dec) -> latlon_wktb
+```
+
+```{r}
+#Calculate zeta diversity decay parameters and plots.
+zetaDecay.ex_asvs_wktb <- Zeta.decline.ex(wktb_DataPA_asvs,orders=1:8,plot=TRUE)
+
+saveRDS(zetaDecay.ex_asvs_wktb, file=here("analysis","zeta","zetaDecay.ex_asvs_wktb"))
+
+zetaDecay.ex_asvs_wktb <- readRDS( file=here("analysis","zeta","zetaDecay.ex_asvs_wktb"))
+
+zetaDecay.ex_asvs_wktb[5]$ratio <- c(zetaDecay.ex_asvs_wktb[5]$ratio,NA)
+zetaDecay.ex_asvs_wktb[1:5] %>% as_tibble() %>% 
+  mutate(., Region = "Wakatobi",
+         Level = "Samples") -> zeta_wakatobi_sample
+```
+
+###S12
+```{r}
+
+rbind(zeta_raja_site,zeta_raja_sample,
+      zeta_bb_site,zeta_bb_sample,
+      zeta_ls_site,zeta_ls_sample,
+      zeta_derawan_site,zeta_derawan_sample,
+      zeta_aceh_site,zeta_aceh_sample,
+      zeta_tnt_site,zeta_tnt_sample,
+      zeta_wakatobi_site,zeta_wakatobi_sample) -> zeta_data
+
+write.csv(zeta_data, file=here("analysis","zeta","zeta_data.csv"))
+```
+
+
+
+```{r}
+  
+zeta.ddecay.asv.gam.N_wktb <- list()
+for(i in 2:5){
+ zeta.ddecay.asv.gam.N_wktb[[i-1]] <-  Zeta.ddecay(latlon_wktb, wktb_DataPA_asvs,order=i,distance.type="ortho",reg.type="glm")
+
+}
+
+saveRDS(zeta.ddecay.asv.gam.N_wktb, file=here("analysis","zeta","zeta.ddecay.asv.gam.N_wktb"))
+
+
+```
+
+
+### Zeta Decay Figure
+
+```{r}
+zetaDecay.ex_asvs_dwn[1:4] %>% as.tibble() %>% mutate(Region = "Derawan")-> zdx_dwn_tib
+zetaDecay.ex_asvs_aceh[1:4] %>% as.tibble() %>% mutate(Region = "Aceh")-> zdx_aceh_tib
+zetaDecay.ex_asvs_bb[1:4] %>% as.tibble() %>% mutate(Region = "Batam Bintam")-> zdx_bb_tib
+zetaDecay.ex_asvs_ls[1:4] %>% as.tibble() %>% mutate(Region = "Lembeh Strait")-> zdx_ls_tib
+zetaDecay.ex_asvs_raja[1:4] %>% as.tibble() %>% mutate(Region = "Raja Ampat")-> zdx_raja_tib
+zetaDecay.ex_asvs_tnt[1:4] %>% as.tibble() %>% mutate(Region = "Ternate")-> zdx_tnt_tib
+zetaDecay.ex_asvs_wktb[1:4] %>% as.tibble() %>% mutate(Region = "Wakatobi")-> zdx_wktb_tib
+
+bind_rows(zdx_dwn_tib,zdx_aceh_tib,zdx_bb_tib,zdx_ls_tib,zdx_raja_tib,zdx_tnt_tib,zdx_wktb_tib) -> zdx_regions_samples
+
+
+zdv_decay_samples <- zdx_regions_samples %>% 
+ggplot(aes(x= zeta.order, y= zeta.val, group=Region,color=Region, fill=Region)) +geom_point() +geom_line() + geom_ribbon(aes(ymin = zeta.val - zeta.val.sd, ymax = zeta.val + zeta.val.sd),alpha =0.1, colour = NA) + theme(axis.line = element_line(colour = "black"), panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20))  + scale_fill_manual(values=col.mor8) +  scale_colour_manual(values=col.mor8) +xlim(0,11) +ylab("Zeta Diversity") + xlab("Zeta Order - Samples") +ylim(0,50)
+```
+
+### Species Retention Figure
+
+```{r}
+
+zetaDecay.ex_asvs_dwn[5] %>% as.tibble() %>% mutate(Region = "Derawan",zeta.order = 1:n()) -> ret_dwn_tib
+zetaDecay.ex_asvs_aceh[5] %>% as.tibble() %>% mutate(Region = "Aceh",zeta.order = 1:n())-> ret_aceh_tib
+zetaDecay.ex_asvs_bb[5] %>% as.tibble() %>% mutate(Region = "Batam Bintam",zeta.order = 1:n())-> ret_bb_tib
+zetaDecay.ex_asvs_ls[5] %>% as.tibble() %>% mutate(Region = "Lembeh Strait",zeta.order = 1:n())-> ret_ls_tib
+zetaDecay.ex_asvs_raja[5] %>% as.tibble() %>% mutate(Region = "Raja Ampat",zeta.order = 1:n())-> ret_raja_tib
+zetaDecay.ex_asvs_tnt[5] %>% as.tibble() %>% mutate(Region = "Ternate",zeta.order = 1:n())-> ret_tnt_tib
+zetaDecay.ex_asvs_wktb[5] %>% as.tibble() %>% mutate(Region = "Wakatobi",zeta.order = 1:n())-> ret_wktb_tib
+
+bind_rows(ret_dwn_tib,ret_aceh_tib,ret_bb_tib,ret_ls_tib,ret_raja_tib,ret_tnt_tib,ret_wktb_tib) -> zdx_regions_ret_samples
+
+spec_ret_samples <- zdx_regions_ret_samples %>% 
+ggplot(aes(x= zeta.order, y= ratio, group=Region,color=Region)) +geom_point() +geom_line() +
+  theme(axis.line = element_line(color="black"),panel.grid.major = element_blank(), panel.grid.minor = element_blank(),panel.background = element_blank(), axis.text=element_text(size=16),
+        axis.title=element_text(size=20,face="bold"),legend.title = element_text( size=12, face="bold"),legend.text = element_text(size=10, 
+                                     face="bold") ) + theme(legend.text=element_text(size=16), legend.title=element_text(size=20))  + scale_fill_manual(values=col.mor8) +  scale_colour_manual(values=col.mor8) +xlim(0,20) +ylab("Zeta Ratio") + xlab("Zeta Order - Samples") +ylim(0,1)
+
+
+```
+
+## Figure 4
+
+```{r}
+
+
+fig_4_complete <- ggarrange(zdv_decay_sites,zdv_decay_samples,
+          ncol = 2, 
+          labels = c("A", "B"), common.legend = TRUE, legend="bottom")  
+
+ggsave(plot= fig_4_complete, 
+       filename = here("analysis","figures","Figure_4_combined.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+
+```
+
+## Figure 5
+
+```{r}
+
+
+fig_5_complete <- ggarrange(spec_ret_sites,spec_ret_samples,
+          ncol = 2, 
+          labels = c("A", "B"), common.legend = TRUE, legend="bottom")  
+
+ggsave(plot= fig_5_complete, 
+       filename = here("analysis","figures","Figure_5_combined.eps"),
+       width=16,
+       height = 8,
+       dpi = 400,
+      device = cairo_ps,
+      units = c("in"))
+
+
+```
+#Aceh Species List
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., Region =="Aceh") %>% 
+  dplyr::select(sum.taxonomy) %>%  distinct() %>% write.csv("aceh_species_list.csv")
+
+```
+
+#Raja Ampat Species List
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., Region =="Raja Ampat") %>% 
+  dplyr::select(sum.taxonomy) %>%  distinct() %>% write.csv("raja_ampat_species_list.csv")
+
+```
+
+#Batam Bintam Species List
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., Region =="Batam Bintam") %>% 
+  dplyr::select(sum.taxonomy) %>%  distinct() %>% write.csv("batam_bintam_species_list.csv")
+
+```
+
+#Lembeh Strait Species List
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., Region =="Lembeh Strait") %>% 
+  dplyr::select(sum.taxonomy) %>%  distinct() %>% write.csv("Lembeh_Strait_species_list.csv")
+
+```
+
+#Derawan Species List
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., Region =="Derawan") %>% 
+  dplyr::select(sum.taxonomy) %>%  distinct() %>% write.csv("Derawan_species_list.csv")
+
+```
+
+#Ternate Species List
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., Region =="Ternate") %>% 
+  dplyr::select(sum.taxonomy) %>%  distinct() %>% write.csv("Ternate_species_list.csv")
+
+```
+
+#Wakatobi Species List
+```{r}
+ASV.nested %>% 
+  dplyr::select(Step5.tibble, Miseq_run) %>% 
+  unnest() %>% 
+    filter(., str_detect(seq_number, "12S_miu")) %>% 
+    left_join(hash.key.updated_12S) %>% 
+    filter(., sum.taxonomy !="") %>% 
+    filter(., sample %in% onny_samples_to_use) %>% 
+    filter(., seq_number %in% good_ASVs$seq_number) %>% 
+  left_join(metadata, by= c("sample"="Seq_number")) %>% 
+  filter(., Region =="Wakatobi") %>% 
+  dplyr::select(sum.taxonomy) %>%  distinct() %>% write.csv("Wakatobi_species_list.csv")
+
+```
