@@ -30,7 +30,7 @@ library('gridBase')
 library("optparse")
 library(ranacapa)
 library(devtools)
-library(decontam)
+#library(decontam)
 library(ggfortify)
 library(RColorBrewer)
 library(multcompView)
@@ -46,19 +46,19 @@ library(readr)
 library(treemapify)
 library(knitr)
 ##Source https://github.com/mahendra-mariadassou/phyloseq-extended
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/graphical_methods.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/tree_methods.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/plot_merged_trees.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/specificity_methods.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/ternary_plot.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/richness.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/edgePCA.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/copy_number_correction.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/import_frogs.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/prevalence.R")
-source("/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/compute_niche.R")
-source('/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/pairwise_adonis.R')
-source('/Users/zackgold/Documents/UCLA_phd/phyloseq-extended-master/ggrare.R')
+source(here("phyloseq-extended-master","graphical_methods.R"))
+source(here("phyloseq-extended-master","tree_methods.R"))
+source(here("phyloseq-extended-master","plot_merged_trees.R"))
+source(here("phyloseq-extended-master","specificity_methods.R"))
+source(here("phyloseq-extended-master","ternary_plot.R"))
+source(here("phyloseq-extended-master","richness.R"))
+source(here("phyloseq-extended-master","edgePCA.R"))
+source(here("phyloseq-extended-master","copy_number_correction.R"))
+source(here("phyloseq-extended-master","import_frogs.R"))
+source(here("phyloseq-extended-master","prevalence.R"))
+source(here("phyloseq-extended-master","compute_niche.R"))
+source(here("phyloseq-extended-master","pairwise_adonis.R"))
+source(here("phyloseq-extended-master","ggrare.R"))
 library(here)
 ```
 
@@ -67,30 +67,31 @@ library(here)
 
 ASV.table_long <- readRDS(file=here("decontamination","ASV.table_long"))
 
-ASV.table_long_mpa <- readRDS(file="/Users/zackgold/Documents/UCLA_phd/Projects/California/General_Channel_Islands/MPA_test_data/ms/plos_one/Scorpion-SMR-eDNA-Metabarcoding/analysis/scorpion/decontam/ASV.table_long_mpa.RDS")
+ASV.table_long_mpa <- readRDS(file=here("data","ASV.table_long_mpa.RDS"))
 
-ASV.nested <- readRDS(file=here( "decontamination", "ASV.nested_final.RDS"))
+ASV.nested <- readRDS(file=here("decontamination", "ASV.nested_final.RDS"))
+
 hash.key.updated_12S <- readRDS(here( "decontamination","hash.key.updated_12S"))
 
-zjg_eidx <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occupancy_results_sum.taxonomy_tech_reps_summed_eDNA_index.RDS")
+zjg_eidx <- readRDS(here("decontamination","Output_R","fish_12S_pre_occupancy_results_sum.taxonomy_tech_reps_summed_eDNA_index.RDS"))
 
-zjg_reads <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occupancy_results_sum.taxonomy_tech_reps_summed_read_counts.RDS")
+zjg_reads <- readRDS(here("decontamination","Output_R","fish_12S_pre_occupancy_results_sum.taxonomy_tech_reps_summed_read_counts.RDS"))
 
-zjg_asvs_reads_sites <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occ_site_ASV_reads_summed.RDS")
+zjg_asvs_reads_sites <- readRDS(here("decontamination","Output_R","fish_12S_pre_occ_site_ASV_reads_summed.RDS"))
 
-zjg_asv_reads <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occ_site_asv_table.RDS")
+zjg_asv_reads <- readRDS(here("decontamination","Output_R","fish_12S_pre_occ_site_asv_table.RDS"))
 
-zjg_asv_index <- readRDS("/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occ_site_asv_table_edna_index.RDS")
+zjg_asv_index <- readRDS(here("decontamination","Output_R","fish_12S_pre_occ_site_asv_table_edna_index.RDS"))
 
-zjg_asv_site_viz <- readRDS(file="/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/Output_R/fish_12S_pre_occ_site_ASV_reads_summed_4_viz.RDS")
+zjg_asv_site_viz <- readRDS(file=here("decontamination","Output_R","fish_12S_pre_occ_site_ASV_reads_summed_4_viz.RDS"))
 
 raw_asv_data <-readRDS(file=here("data","ASV.table_long_raw.RDS"))
 
-metadata <- read.table(file="/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/onny_metadata_11022020.txt", header=T)
+metadata <- read.table(file=here("onny_metadata_11022020.txt"), header=T)
 
-ASV.nested.mpa <- readRDS(file="/Users/zackgold/Documents/UCLA_phd/Projects/California/General_Channel_Islands/MPA_test_data/ms/plos_one/Scorpion-SMR-eDNA-Metabarcoding/analysis/scorpion/decontam/ASV.nested_final.RDS")
+ASV.nested.mpa <- readRDS(file=here("data","ASV.nested_final_mpa.RDS"))
 
-good_ASVs <- readRDS(file="/Users/zackgold/Documents/UCLA_phd/Projects/Indonesia/Indo_moorea_oct2020/ONNY/decontamination/good_ASVs.RDS")
+good_ASVs <- readRDS(file=here("decontamination","good_ASVs.RDS"))
 ```
 
 ##### Clean Up Metadata
@@ -448,7 +449,7 @@ ASV.nested.mpa %>%
       filter(., sum.taxonomy !="") %>% 
   separate(., sum.taxonomy, into =c("Domain","Phylum","Class","Order","Family","Genus","Species"),remove = F, sep=";") -> step6_tibble_mpa
 
-mpa_detailed <- read.table(file ="/Users/zackgold/Documents/UCLA_phd/Projects/California/General_Channel_Islands/MPA_test_data/input/2020320_analysis/fishcard_12S_all_taxonomy_tables/fishcard_12S_all_ASV_taxonomy_detailed.txt", header = TRUE, sep="\t") 
+mpa_detailed <- read.table(file =here("data","MPA","fishcard_12S_all_taxonomy_tables","fishcard_12S_all_ASV_taxonomy_detailed.txt"), header = TRUE, sep="\t")
 
 mpa_detailed %>%  dplyr::select(seq_number=all_seq_number, sequence)  -> mpa_detailed
 
@@ -847,6 +848,12 @@ write.csv(zjg_asvs_reads_sites, file=here("data","Supplemental_table_4_ASV_site_
 
 
 ```
+
+#clickhere
+
+
+
+
 
 ### ASV Site (Collapsed to Visual Site Level)
 ```{r}
