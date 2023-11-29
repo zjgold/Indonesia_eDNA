@@ -1,6 +1,8 @@
 # Environmental DNA in a Global Biodiversity Hotspot: Lessons from Coral Reef Fish Diversity Across the Indonesian Archipelago
 
-Pre-print is Available [here](https://www.biorxiv.org/content/10.1101/2021.02.19.432056v1)
+Manuscript is Available [here](https://onlinelibrary.wiley.com/doi/full/10.1002/edn3.257)  
+
+Pre-print is Available [here](https://www.biorxiv.org/content/10.1101/2021.02.19.432056v1)  
 
 
 Onny Marwayana<sup>1</sup>, Zachary Gold<sup>1</sup>,Christopher Meyer<sup>2</sup>,Paul H. Barber<sup>1</sup>
